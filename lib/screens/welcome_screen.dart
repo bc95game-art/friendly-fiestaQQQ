@@ -42,8 +42,8 @@ class WelcomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 36),
               _ModeCard(
-                title: 'کنترل بلوتوثی هوشمند تلویزیون دوو',
-                subtitle: 'اتصال بی‌سیم — موس و ضبط صدا فعال',
+                title: 'کنترل با بلوتوث تلویزیون',
+                subtitle: 'اتصال بی‌سیم — نیازمند Pair کردن بلوتوث تلویزیون از تنظیمات گوشی',
                 icon: Icons.bluetooth_rounded,
                 accent: AppColors.btAccent,
                 onTap: () => Navigator.of(context).push(
@@ -52,8 +52,8 @@ class WelcomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               _ModeCard(
-                title: 'کنترل هوشمند با فرستنده تلویزیونی دوو',
-                subtitle: 'جمع‌وجور — موس و ضبط صدا غیرفعال',
+                title: 'کنترل با فرستنده مادون‌قرمز (IR)',
+                subtitle: 'اگر گوشی شما فرستنده IR دارد',
                 icon: Icons.settings_remote_rounded,
                 accent: AppColors.irAccent,
                 onTap: () => Navigator.of(context).push(

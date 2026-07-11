@@ -22,42 +22,25 @@ class PermissionsService {
   ///   ACCESS_FINE_LOCATION در این نسخه‌ها برای BLE اجباری نیست.
   /// • اندروید < ۱۲: اسکن BLE به ACCESS_FINE_LOCATION گره خورده است.
   ///
-  /// این متد هر سه مجوز را درخواست می‌کند ولی فقط BT_SCAN و BT_CONNECT
-  /// را به عنوان «اجباری» در نظر می‌گیرد — چون اندروید ۱۲+ بدون location هم کار می‌کند.
+  /// این اپ دیگر خودش اسکن بلوتوثی انجام نمی‌دهد (دستگاه از لیست
+  /// دستگاه‌های از‌قبل Pair‌شده‌ی گوشی انتخاب می‌شود)، پس فقط
+  /// BLUETOOTH_CONNECT لازم است.
   static Future<PermissionResult> requestBluetoothPermissions() async {
-    // درخواست همه‌ی مجوزها یکجا
-    await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse, // برای اندروید < ۱۲
-    ].request();
+    await Permission.bluetoothConnect.request();
 
-    // فقط BT_SCAN و BT_CONNECT اجباری هستند
-    final scanGranted = await Permission.bluetoothScan.isGranted ||
-        await Permission.bluetoothScan.isLimited;
     final connectGranted = await Permission.bluetoothConnect.isGranted ||
         await Permission.bluetoothConnect.isLimited;
 
-    if (scanGranted && connectGranted) {
+    if (connectGranted) {
       return const PermissionResult(granted: true, permanentlyDenied: false);
     }
 
-    // بررسی حالت permanently denied (دیالوگ دیگر نمایش داده نمی‌شود)
-    final perma = await Permission.bluetoothScan.isPermanentlyDenied ||
-        await Permission.bluetoothConnect.isPermanentlyDenied;
-
+    final perma = await Permission.bluetoothConnect.isPermanentlyDenied;
     return PermissionResult(granted: false, permanentlyDenied: perma);
   }
 
-  /// مجوز میکروفون برای قابلیت ضبط صدا در کنترل کوچک بلوتوثی
-  static Future<bool> requestMicrophonePermission() async {
-    final status = await Permission.microphone.request();
-    return status.isGranted;
-  }
-
-  /// بررسی اینکه آیا مجوزهای بلوتوث از قبل داده شده‌اند (بدون نمایش دیالوگ)
+  /// بررسی اینکه آیا مجوز بلوتوث از قبل داده شده (بدون نمایش دیالوگ)
   static Future<bool> checkBluetoothGranted() async {
-    return await Permission.bluetoothConnect.isGranted &&
-        await Permission.bluetoothScan.isGranted;
+    return await Permission.bluetoothConnect.isGranted;
   }
 }

@@ -40,7 +40,9 @@ android {
 
     defaultConfig {
         applicationId "ali.khaleghi.daewooremote"
-        minSdkVersion 21
+        // ۲۸ (اندروید ۹) به‌جای ۲۱: پروفایل استاندارد BluetoothHidDevice که برای
+        // اتصال واقعی به بلوتوث تلویزیون استفاده می‌شود از API 28 در دسترس است.
+        minSdkVersion 28
         targetSdkVersion 34
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName

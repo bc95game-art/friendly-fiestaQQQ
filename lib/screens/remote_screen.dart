@@ -1,16 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart' hide BluetoothService;
 
 import '../models/remote_mode.dart';
-import '../services/bluetooth_service.dart';
+import '../services/bt_hid_service.dart';
 import '../services/remote_controller.dart';
-import '../services/remote_input_handler.dart';
 import '../theme/colors.dart';
 import '../widgets/remote_button.dart';
 import '../widgets/touchpad.dart';
-import 'bt_debug_screen.dart';
 
 class RemoteScreen extends StatefulWidget {
   const RemoteScreen({super.key, required this.mode, required this.size});
@@ -29,103 +25,86 @@ class _RemoteScreenState extends State<RemoteScreen> {
   // ── دیباونس: جلوگیری از ارسال چند فرمان همزمان هنگام ضربه‌های سریع ──
   DateTime? _lastPressTime;
 
-  // ── برای نمایش feedback دکمه فیزیکی ──────────────────────────────────
-  RemoteAction? _lastPhysicalAction;
-  Timer? _feedbackTimer;
-
   @override
   void initState() {
     super.initState();
     if (widget.mode.isBluetooth) {
-      _btSub = BluetoothService.instance.stateStream.listen((s) {
+      _btSub = BtHidService.instance.stateStream.listen((s) {
         if (mounted) setState(() => _btState = s);
       });
-      _autoConnect();
-      // گوش دادن به کیبورد سخت‌افزاری (ریموت فیزیکی HID)
-      HardwareKeyboard.instance.addHandler(_onHardwareKey);
+      _initBluetooth();
     }
   }
 
-  // ── هندلر دکمه‌های ریموت فیزیکی بلوتوثی (HID) ────────────────────────
-  bool _onHardwareKey(KeyEvent event) {
-    final action = RemoteInputHandler.resolve(event);
-    if (action == null) return false;
-
-    final commandKey = RemoteInputHandler.toCommandKey(action);
-    if (commandKey != null) {
-      _press(commandKey);
-      setState(() => _lastPhysicalAction = action);
-      _feedbackTimer?.cancel();
-      _feedbackTimer = Timer(const Duration(milliseconds: 900), () {
-        if (mounted) setState(() => _lastPhysicalAction = null);
-      });
-    }
-    return true;
-  }
-
-  Future<void> _autoConnect() async {
-    await _pickDevice(auto: true);
-  }
-
-  Future<void> _pickDevice({bool auto = false}) async {
-    final results = <ScanResult>[];
-    final sub = BluetoothService.instance.scanForDaewooRemotes().listen((r) {
-      results
-        ..clear()
-        ..addAll(r);
-    });
-    await Future.delayed(const Duration(seconds: 4));
-    await sub.cancel();
-    await BluetoothService.instance.stopScan();
-
+  Future<void> _initBluetooth() async {
+    final supported = await BtHidService.instance.initialize();
     if (!mounted) return;
-    if (results.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('هیچ دستگاه بلوتوثی پیدا نشد — دوباره تلاش کنید')),
-      );
+    if (!supported) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+          'این گوشی از حالت کنترل بلوتوثی پشتیبانی نمی‌کند (نیاز به اندروید ۹ به بالا) — از حالت فرستنده IR استفاده کنید',
+        ),
+        duration: Duration(seconds: 5),
+      ));
+      return;
+    }
+    // اگر فقط یک دستگاه Pair شده وجود دارد، مستقیم به آن وصل شو
+    final devices = await BtHidService.instance.bondedDevices();
+    if (devices.length == 1 && mounted) {
+      await BtHidService.instance.connect(devices.first.address);
+    }
+  }
+
+  Future<void> _pickDevice() async {
+    final devices = await BtHidService.instance.bondedDevices();
+    if (!mounted) return;
+
+    if (devices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text(
+          'هیچ دستگاهی پیدا نشد — اول باید بلوتوث تلویزیون را از «تنظیمات گوشی ← بلوتوث» Pair کنید',
+        ),
+        duration: Duration(seconds: 5),
+      ));
       return;
     }
 
-    if (auto && results.length == 1) {
-      final name = results.first.device.platformName.toLowerCase();
-      if (name.contains('daewoo') || name.contains('dw')) {
-        await BluetoothService.instance.connect(results.first.device);
-        return;
-      }
-    }
-
-    if (!mounted) return;
-    final chosen = await showModalBottomSheet<BluetoothDevice>(
+    final chosen = await showModalBottomSheet<BtBondedDevice>(
       context: context,
       backgroundColor: AppColors.panel,
-      builder: (_) => ListView(
-        shrinkWrap: true,
-        children: results
-            .map((r) => ListTile(
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'بلوتوث تلویزیون خود را از لیست انتخاب کنید',
+                  style: TextStyle(color: AppColors.text2, fontSize: 13),
+                ),
+              ),
+            ),
+            ...devices.map((d) => ListTile(
                   leading: const Icon(Icons.bluetooth, color: AppColors.btAccent),
-                  title: Text(
-                    r.device.platformName.isEmpty ? '(بدون نام)' : r.device.platformName,
-                    style: const TextStyle(color: AppColors.text1),
-                  ),
-                  subtitle: Text(r.device.remoteId.str,
-                      style: const TextStyle(color: AppColors.text3)),
-                  onTap: () => Navigator.pop(context, r.device),
-                ))
-            .toList(),
+                  title: Text(d.name, style: const TextStyle(color: AppColors.text1)),
+                  subtitle: Text(d.address, style: const TextStyle(color: AppColors.text3)),
+                  onTap: () => Navigator.pop(context, d),
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
     if (chosen != null) {
-      await BluetoothService.instance.connect(chosen);
+      await BtHidService.instance.connect(chosen.address);
     }
   }
 
   @override
   void dispose() {
     _btSub?.cancel();
-    _feedbackTimer?.cancel();
-    if (widget.mode.isBluetooth) {
-      HardwareKeyboard.instance.removeHandler(_onHardwareKey);
-    }
     super.dispose();
   }
 
@@ -149,15 +128,15 @@ class _RemoteScreenState extends State<RemoteScreen> {
     if (widget.mode.isIr) return 'آماده ارسال سیگنال';
     switch (_btState) {
       case BtConnState.connected:
-        return 'متصل به کنترل دوو';
+        return 'متصل به بلوتوث تلویزیون';
       case BtConnState.connecting:
-        return 'در حال اتصال…';
-      case BtConnState.scanning:
-        return 'در حال جستجو…';
+        return 'در حال اتصال به بلوتوث تلویزیون…';
+      case BtConnState.unsupported:
+        return 'این گوشی پشتیبانی نمی‌کند';
       case BtConnState.error:
         return 'خطا در اتصال — لمس کنید';
       case BtConnState.disconnected:
-        return 'متصل نیست — لمس کنید';
+        return 'به بلوتوث تلویزیون متصل نیست — لمس کنید';
     }
   }
 
@@ -170,113 +149,53 @@ class _RemoteScreenState extends State<RemoteScreen> {
       appBar: AppBar(
         title: Text(widget.size == RemoteSize.large ? 'کنترل بزرگ' : 'کنترل کوچک'),
         actions: [
-          if (widget.mode.isBluetooth) ...[
-            IconButton(
-              icon: const Icon(Icons.bug_report_rounded),
-              tooltip: 'Debug دکمه‌های ریموت فیزیکی',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const BtDebugScreen()),
-              ),
-            ),
+          if (widget.mode.isBluetooth)
             IconButton(
               icon: Icon(Icons.bluetooth_searching_rounded,
                   color: connected ? AppColors.success : AppColors.text3),
-              tooltip: 'تغییر دستگاه بلوتوث',
-              onPressed: () => _pickDevice(),
+              tooltip: 'انتخاب بلوتوث تلویزیون',
+              onPressed: _pickDevice,
             ),
-          ],
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(28),
           child: Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  margin: const EdgeInsets.only(left: 8),
-                  decoration: BoxDecoration(
-                    color: connected ? AppColors.success : AppColors.text3,
-                    shape: BoxShape.circle,
+            child: GestureDetector(
+              onTap: widget.mode.isBluetooth &&
+                      _btState != BtConnState.connected &&
+                      _btState != BtConnState.connecting
+                  ? _pickDevice
+                  : null,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    margin: const EdgeInsets.only(left: 8),
+                    decoration: BoxDecoration(
+                      color: connected ? AppColors.success : AppColors.text3,
+                      shape: BoxShape.circle,
+                    ),
                   ),
-                ),
-                Text(_statusText,
-                    style: const TextStyle(fontSize: 12, color: AppColors.text2)),
-              ],
+                  Text(_statusText,
+                      style: const TextStyle(fontSize: 12, color: AppColors.text2)),
+                ],
+              ),
             ),
           ),
         ),
       ),
-      body: Stack(
-        children: [
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: widget.size == RemoteSize.large
-                  ? _LargeRemote(accent: accent, onPress: _press)
-                  : _SmallRemote(accent: accent, mode: widget.mode, onPress: _press),
-            ),
-          ),
-          // ── Feedback روی صفحه وقتی دکمه فیزیکی فشار داده می‌شود ──────
-          if (_lastPhysicalAction != null)
-            Positioned(
-              top: 16,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: AnimatedOpacity(
-                  opacity: _lastPhysicalAction != null ? 1 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: accent.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(999),
-                      boxShadow: [
-                        BoxShadow(
-                            color: accent.withOpacity(0.4), blurRadius: 16),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.bluetooth_rounded,
-                            color: Colors.white, size: 15),
-                        const SizedBox(width: 6),
-                        Text(
-                          _physicalActionLabel(_lastPhysicalAction!),
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: widget.size == RemoteSize.large
+              ? _LargeRemote(accent: accent, onPress: _press)
+              : _SmallRemote(accent: accent, mode: widget.mode, onPress: _press),
+        ),
       ),
     );
-  }
-
-  String _physicalActionLabel(RemoteAction action) {
-    switch (action) {
-      case RemoteAction.channelUp:       return 'کانال بالا ▲';
-      case RemoteAction.channelDown:     return 'کانال پایین ▼';
-      case RemoteAction.volumeUp:        return 'صدا بیشتر +';
-      case RemoteAction.volumeDown:      return 'صدا کمتر −';
-      case RemoteAction.togglePlayPause: return 'پخش / توقف ⏯';
-      case RemoteAction.back:            return 'برگشت ↩';
-      case RemoteAction.ok:              return 'تأیید ✓';
-      case RemoteAction.custom1:         return 'دکمه سفارشی ۱';
-      case RemoteAction.custom2:         return 'دکمه سفارشی ۲';
-    }
   }
 }
 
@@ -436,7 +355,7 @@ class _LargeRemote extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        // ── دکمه‌های رنگی ────────────────────────────────────────────────
+        // ── دکمه‌های رنگی (فقط IR — بلوتوث پیام «پشتیبانی نمی‌شود» می‌دهد) ──
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
@@ -448,7 +367,7 @@ class _LargeRemote extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        // ── ردیف رسانه ۱: Rewind / Play-Pause / Forward ─────────────────
+        // ── ردیف رسانه: Rewind / Play-Pause / Forward ───────────────────
         Row(
           children: [
             Expanded(
@@ -475,34 +394,7 @@ class _LargeRemote extends StatelessWidget {
         ),
         const SizedBox(height: 8),
 
-        // ── ردیف رسانه ۲: Prev / Stop / Next ────────────────────────────
-        Row(
-          children: [
-            Expanded(
-              child: RemoteButton(
-                onTap: () => onPress('prev'),
-                child: const Icon(Icons.skip_previous_rounded),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: RemoteButton(
-                onTap: () => onPress('stop'),
-                child: const Icon(Icons.stop_rounded),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: RemoteButton(
-                onTap: () => onPress('next'),
-                child: const Icon(Icons.skip_next_rounded),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-
-        // ── ردیف: Record / EPG ───────────────────────────────────────────
+        // ── ردیف: Record / EPG (فقط IR) ──────────────────────────────────
         Row(
           children: [
             Expanded(
@@ -519,72 +411,6 @@ class _LargeRemote extends StatelessWidget {
                 label: 'EPG',
                 onTap: () => onPress('epg'),
                 child: const Icon(Icons.grid_view_rounded, size: 16),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-
-        // ── ردیف: TEXT / AUDIO / SUB.T ───────────────────────────────────
-        Row(
-          children: [
-            Expanded(
-              child: RemoteButton(
-                shape: RemoteButtonShape.tiny,
-                label: 'TEXT',
-                onTap: () => onPress('text'),
-                child: const Icon(Icons.text_snippet_outlined, size: 16),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: RemoteButton(
-                shape: RemoteButtonShape.tiny,
-                label: 'AUDIO',
-                onTap: () => onPress('audio'),
-                child: const Icon(Icons.audiotrack_rounded, size: 16),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: RemoteButton(
-                shape: RemoteButtonShape.tiny,
-                label: 'SUB.T',
-                onTap: () => onPress('subtitle'),
-                child: const Icon(Icons.subtitles_outlined, size: 16),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-
-        // ── ردیف: RADIO / ZOOM / SHIFT ───────────────────────────────────
-        Row(
-          children: [
-            Expanded(
-              child: RemoteButton(
-                shape: RemoteButtonShape.tiny,
-                label: 'RADIO',
-                onTap: () => onPress('radio'),
-                child: const Icon(Icons.radio_rounded, size: 16),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: RemoteButton(
-                shape: RemoteButtonShape.tiny,
-                label: 'ZOOM',
-                onTap: () => onPress('zoom'),
-                child: const Icon(Icons.zoom_in_rounded, size: 16),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: RemoteButton(
-                shape: RemoteButtonShape.tiny,
-                label: 'SHIFT',
-                onTap: () => onPress('shift'),
-                child: const Icon(Icons.swap_vert_rounded, size: 16),
               ),
             ),
           ],
@@ -607,7 +433,7 @@ class _SmallRemote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final locked = !mode.supportsMouseAndMic;
+    final locked = !mode.supportsTouchpad;
     return ListView(
       children: [
         // ── Power ────────────────────────────────────────────────────────
@@ -619,21 +445,6 @@ class _SmallRemote extends StatelessWidget {
               accent: AppColors.danger.withOpacity(0.25),
               onTap: () => onPress('power'),
               child: const Icon(Icons.power_settings_new_rounded),
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-
-        // ── Mic (فقط بلوتوث) ─────────────────────────────────────────────
-        Center(
-          child: SizedBox(
-            width: 64,
-            child: RemoteButton(
-              shape: RemoteButtonShape.square,
-              accent: accent.withOpacity(0.2),
-              disabled: locked,
-              onTap: () => onPress('mic'),
-              child: const Icon(Icons.mic_none_rounded),
             ),
           ),
         ),
@@ -691,7 +502,7 @@ class _SmallRemote extends StatelessWidget {
         ),
         const SizedBox(height: 8),
 
-        // ── Vol+ / Mouse Toggle / CH+ ────────────────────────────────────
+        // ── Vol+ / CH+ ────────────────────────────────────────────────────
         Row(
           children: [
             Expanded(
@@ -700,15 +511,6 @@ class _SmallRemote extends StatelessWidget {
                 onTap: () => onPress('vol_up'),
                 child: const Text('+',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: RemoteButton(
-                disabled: locked,
-                accent: accent.withOpacity(0.2),
-                onTap: () => onPress('mouse_toggle'),
-                child: const Icon(Icons.mouse_rounded),
               ),
             ),
             const SizedBox(width: 8),
@@ -751,7 +553,7 @@ class _SmallRemote extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        // ── تاچ‌پد موس (فقط بلوتوث) ─────────────────────────────────────
+        // ── تاچ‌پد موس (فقط بلوتوث — با پروفایل HID موس واقعی) ───────────
         Touchpad(locked: locked),
         const SizedBox(height: 16),
       ],

@@ -1,12 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  تفاوت با نسخه قبلی (تحلیل‌شده در پیام قبل):
-  - حذف شد: مجوزهای AdMob/ACCESS_ADSERVICES_*، com.google.android.gms.ads.*،
-    ir.tapsell.*، applovin.sdk.key، com.facebook.sdk.*، ir.cafebazaar.poolakey (پرداخت)
-  - حذف شد: INTERNET (دیگر تبلیغات/سرور اشتراک وجود ندارد؛ اگر بعداً برای آپدیت
-    نرم‌افزار یا آنالیتیکس محلی به اینترنت نیاز شد، دوباره اضافه کنید)
-  - اضافه شد: BLUETOOTH_SCAN / BLUETOOTH_CONNECT / TRANSMIT_IR / RECORD_AUDIO
-    که واقعاً توسط این نسخه استفاده می‌شوند.
+  به‌روزرسانی بلوتوث: چون اپ دیگر با GATT/BLE اسکن نمی‌کند (آن روش با UUID
+  ساختگی کار می‌کرد و هیچ‌وقت واقعاً وصل نمی‌شد)، فقط BLUETOOTH_CONNECT لازم
+  است تا لیست دستگاه‌های Pair‌شده خوانده شود و به آن‌ها با پروفایل استاندارد
+  BluetoothHidDevice متصل شویم. مجوزهای BLUETOOTH_SCAN/ADMIN/LOCATION و
+  RECORD_AUDIO (که برای قابلیت میکروفونِ هیچ‌وقت‌کارنکرده لازم بود) حذف شدند.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="ali.khaleghi.daewooremote">
@@ -16,17 +14,9 @@
         android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
-    <!-- بلوتوث: نسخه‌های قدیمی‌تر اندروید -->
-    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
-
     <!-- فرستنده مادون‌قرمز (فقط روی گوشی‌هایی که سخت‌افزار IR دارند فعال می‌شود) -->
     <uses-permission android:name="android.permission.TRANSMIT_IR" />
     <uses-feature android:name="android.hardware.consumerir" android:required="false" />
-
-    <!-- ضبط صدا برای دکمه‌ی میکروفون کنترل کوچک بلوتوثی -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <uses-permission android:name="android.permission.VIBRATE" />
 
@@ -39,6 +29,10 @@
 
     <!-- نیازی به بلوتوث سخت‌افزاری اجباری نیست چون حالت IR بدون بلوتوث هم کار می‌کند -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+
+    <!-- برای اینکه گوشی به‌عنوان یک کیبورد/کنترل بلوتوثی به تلویزیون معرفی
+         شود (پروفایل BluetoothHidDevice)، حداقل حداقل سخت‌افزار bluetooth لازم است -->
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <application
         android:label="کنترل هوشمند دوو"

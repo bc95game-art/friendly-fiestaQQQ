@@ -81,10 +81,6 @@ class SizePickerScreen extends StatelessWidget {
         return;
       }
 
-      // درخواست مجوز میکروفون (اختیاری — اگر رد شود ادامه می‌دهیم)
-      if (size == RemoteSize.small) {
-        await PermissionsService.requestMicrophonePermission();
-      }
     }
 
     if (context.mounted) {
@@ -105,9 +101,7 @@ class SizePickerScreen extends StatelessWidget {
           children: [
             _SizeCard(
               title: 'کنترل بزرگ',
-              subtitle: mode.isBluetooth
-                  ? 'تمام قابلیت‌ها — موس و ضبط صدا فعال'
-                  : 'تمام قابلیت‌ها — موس و ضبط صدا غیرفعال',
+              subtitle: 'تمام دکمه‌ها',
               accent: accent,
               onTap: () => _open(context, RemoteSize.large),
             ),
@@ -115,8 +109,8 @@ class SizePickerScreen extends StatelessWidget {
             _SizeCard(
               title: 'کنترل کوچک',
               subtitle: mode.isBluetooth
-                  ? 'جمع‌وجور — موس و ضبط صدا فعال'
-                  : 'جمع‌وجور — موس و ضبط صدا غیرفعال',
+                  ? 'جمع‌وجور — همراه با تاچ‌پد موس'
+                  : 'جمع‌وجور',
               accent: accent,
               onTap: () => _open(context, RemoteSize.small),
             ),

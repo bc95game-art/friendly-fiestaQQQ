@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import '../models/remote_mode.dart';
-import 'bluetooth_service.dart';
+import 'bt_hid_service.dart';
+import 'bt_hid_commands.dart';
 import 'ir_service.dart';
 import 'ir_codes.dart';
 
@@ -12,7 +13,7 @@ class CommandResult {
 }
 
 /// هر دکمه‌ی کنترل، این کلاس را صدا می‌زند. بسته به حالت (bluetooth/ir)
-/// دستور را از مسیر درست (GATT write یا ConsumerIrManager) واقعاً ارسال می‌کند.
+/// دستور را از مسیر درست (HID بلوتوثی واقعی یا ConsumerIrManager) ارسال می‌کند.
 class RemoteController {
   RemoteController(this.mode);
   final RemoteMode mode;
@@ -21,10 +22,16 @@ class RemoteController {
     HapticFeedback.lightImpact();
 
     if (mode.isBluetooth) {
-      if (!BluetoothService.instance.isConnected) {
-        return const CommandResult(false, 'ابتدا به کنترل بلوتوثی متصل شوید');
+      if (!BtHidService.instance.isConnected) {
+        return const CommandResult(false, 'ابتدا به بلوتوث تلویزیون متصل شوید');
       }
-      final ok = await BluetoothService.instance.sendCommand(commandKey.toUpperCase());
+      if (!BtHidCommands.map.containsKey(commandKey)) {
+        return const CommandResult(
+          false,
+          'این دکمه در حالت بلوتوث پشتیبانی نمی‌شود — از حالت فرستنده IR استفاده کنید',
+        );
+      }
+      final ok = await BtHidService.instance.sendCommand(commandKey);
       return CommandResult(ok, ok ? null : 'ارسال فرمان با خطا مواجه شد');
     }
 

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/bluetooth_service.dart';
+import '../services/bt_hid_service.dart';
 import '../theme/colors.dart';
 
 /// تاچ‌پد موس واقعی: طبق رفتار کنترل اصلی دوو -
@@ -31,7 +31,7 @@ class _TouchpadState extends State<Touchpad> {
     final dx = d.delta.dx.round();
     final dy = d.delta.dy.round();
     if (dx != 0 || dy != 0) {
-      BluetoothService.instance.sendMouseMove(dx, dy);
+      BtHidService.instance.sendMouseMove(dx, dy);
     }
   }
 
@@ -44,7 +44,7 @@ class _TouchpadState extends State<Touchpad> {
 
   void _onTap() {
     if (widget.locked) return;
-    BluetoothService.instance.sendMouseClick();
+    BtHidService.instance.sendMouseClick();
   }
 
   @override
