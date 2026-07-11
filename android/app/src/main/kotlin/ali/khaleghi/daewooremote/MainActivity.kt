@@ -64,12 +64,12 @@ class MainActivity : FlutterActivity() {
             0x15, 0x00,
             0x25, 0x01,
             0x75, 0x01,
-            0x95, 0x08.toByte(),
+            0x95.toByte(), 0x08.toByte(),
             0x81.toByte(), 0x02,    // Input (modifier byte)
-            0x95, 0x01,
+            0x95.toByte(), 0x01,
             0x75, 0x08.toByte(),
             0x81.toByte(), 0x01,    // Input (reserved byte)
-            0x95, 0x06,
+            0x95.toByte(), 0x06,
             0x75, 0x08.toByte(),
             0x15, 0x00,
             0x25, 0x65,
@@ -89,7 +89,7 @@ class MainActivity : FlutterActivity() {
             0x19, 0x00,
             0x2A, 0xFF.toByte(), 0x03,   // Usage Maximum (1023)
             0x75, 0x10,             // Report Size (16)
-            0x95, 0x01,
+            0x95.toByte(), 0x01,
             0x81.toByte(), 0x00,    // Input (Data, Array)
             0xC0.toByte(),          // End Collection
 
@@ -105,10 +105,10 @@ class MainActivity : FlutterActivity() {
             0x29, 0x03,
             0x15, 0x00,
             0x25, 0x01,
-            0x95, 0x03,
+            0x95.toByte(), 0x03,
             0x75, 0x01,
             0x81.toByte(), 0x02,    // Input (3 button bits)
-            0x95, 0x01,
+            0x95.toByte(), 0x01,
             0x75, 0x05,
             0x81.toByte(), 0x01,    // Input (padding)
             0x05, 0x01,
@@ -117,7 +117,7 @@ class MainActivity : FlutterActivity() {
             0x15, 0x81.toByte(),    // Logical Minimum (-127)
             0x25, 0x7F,             // Logical Maximum (127)
             0x75, 0x08.toByte(),
-            0x95, 0x02,
+            0x95.toByte(), 0x02,
             0x81.toByte(), 0x06,    // Input (Data, Variable, Relative)
             0xC0.toByte(),          // End Collection
             0xC0.toByte()           // End Collection
