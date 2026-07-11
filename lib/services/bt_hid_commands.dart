@@ -46,6 +46,10 @@ class BtHidCommands {
     'rewind': BtHidCommand(true, 0x00B4), // Rewind
     'forward': BtHidCommand(true, 0x00B3), // Fast Forward
     'info': BtHidCommand(true, 0x0061), // Data On Screen
+    'prev': BtHidCommand(true, 0x00B6), // Scan Previous Track
+    'next': BtHidCommand(true, 0x00B5), // Scan Next Track
+    'stop': BtHidCommand(true, 0x00B7), // Stop
+    'record': BtHidCommand(true, 0x00B2), // Record
     'num_0': BtHidCommand(false, 0x27),
     'num_1': BtHidCommand(false, 0x1E),
     'num_2': BtHidCommand(false, 0x1F),
