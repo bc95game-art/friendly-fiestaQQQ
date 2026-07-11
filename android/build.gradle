@@ -17,14 +17,17 @@ buildscript {
 // یک extension جعلی flutter می‌سازیم تا build موفق شود.
 // ──────────────────────────────────────────────────────────────────
 gradle.beforeProject { proj ->
-    proj.ext.flutter = [
-        compileSdkVersion: 34,
-        targetSdkVersion : 34,
-        minSdkVersion    : 21,
-        ndkVersion       : "25.1.8937393",
-        versionCode      : 1,
-        versionName      : "2.0.0",
-    ]
+    // فقط برای library subprojects (نه app و نه root) اعمال شود
+    if (proj.name != 'app' && proj != rootProject) {
+        proj.ext.flutter = [
+            compileSdkVersion: 34,
+            targetSdkVersion : 34,
+            minSdkVersion    : 21,
+            ndkVersion       : "25.1.8937393",
+            versionCode      : 1,
+            versionName      : "2.0.0",
+        ]
+    }
 }
 
 allprojects {
