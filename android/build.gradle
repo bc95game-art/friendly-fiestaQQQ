@@ -10,6 +10,23 @@ buildscript {
     }
 }
 
+// ──────────────────────────────────────────────────────────────────
+// Workaround: flutter_blue_plus_android از flutter.compileSdkVersion
+// در build.gradle خودش استفاده می‌کند، اما این extension فقط در پروژه
+// اپ وجود دارد نه library subprojects. قبل از اجرای هر subproject
+// یک extension جعلی flutter می‌سازیم تا build موفق شود.
+// ──────────────────────────────────────────────────────────────────
+gradle.beforeProject { proj ->
+    proj.ext.flutter = [
+        compileSdkVersion: 34,
+        targetSdkVersion : 34,
+        minSdkVersion    : 21,
+        ndkVersion       : "25.1.8937393",
+        versionCode      : 1,
+        versionName      : "2.0.0",
+    ]
+}
+
 allprojects {
     repositories {
         google()
