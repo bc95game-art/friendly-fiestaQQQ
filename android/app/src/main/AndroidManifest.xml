@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  تفاوت با نسخه قبلی (تحلیل‌شده در پیام قبل):
+  - حذف شد: مجوزهای AdMob/ACCESS_ADSERVICES_*، com.google.android.gms.ads.*،
+    ir.tapsell.*، applovin.sdk.key، com.facebook.sdk.*، ir.cafebazaar.poolakey (پرداخت)
+  - حذف شد: INTERNET (دیگر تبلیغات/سرور اشتراک وجود ندارد؛ اگر بعداً برای آپدیت
+    نرم‌افزار یا آنالیتیکس محلی به اینترنت نیاز شد، دوباره اضافه کنید)
+  - اضافه شد: BLUETOOTH_SCAN / BLUETOOTH_CONNECT / TRANSMIT_IR / RECORD_AUDIO
+    که واقعاً توسط این نسخه استفاده می‌شوند.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="ali.khaleghi.daewooremote">
+
+    <!-- بلوتوث: اندروید ۱۲ (API 31) به بعد -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- بلوتوث: نسخه‌های قدیمی‌تر اندروید -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+
+    <!-- فرستنده مادون‌قرمز (فقط روی گوشی‌هایی که سخت‌افزار IR دارند فعال می‌شود) -->
+    <uses-permission android:name="android.permission.TRANSMIT_IR" />
+    <uses-feature android:name="android.hardware.consumerir" android:required="false" />
+
+    <!-- ضبط صدا برای دکمه‌ی میکروفون کنترل کوچک بلوتوثی -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- این مجوز فقط برای ابزار توسعه فلاتر لازم است (hot reload / flutter run
+         از طریق سوکت لوکال با دستگاه صحبت می‌کند و اندروید حتی برای سوکت لوکال
+         هم مجوز INTERNET می‌خواهد). در build نهایی release هیچ درخواست شبکه‌ای
+         توسط خودِ اپ انجام نمی‌شود (بدون تبلیغات/سرور) — اگر می‌خواهید کاملاً
+         بدون دسترسی شبکه باشد، این خط را فقط در نسخه release حذف کنید. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- نیازی به بلوتوث سخت‌افزاری اجباری نیست چون حالت IR بدون بلوتوث هم کار می‌کند -->
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+
+    <application
+        android:label="کنترل هوشمند دوو"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+</manifest>
