@@ -54,14 +54,12 @@ class _RemoteScreenState extends State<RemoteScreen> {
     final commandKey = RemoteInputHandler.toCommandKey(action);
     if (commandKey != null) {
       _press(commandKey);
-      // نمایش کوتاه نام اکشن روی صفحه
       setState(() => _lastPhysicalAction = action);
       _feedbackTimer?.cancel();
       _feedbackTimer = Timer(const Duration(milliseconds: 900), () {
         if (mounted) setState(() => _lastPhysicalAction = null);
       });
     }
-    // true = رویداد مصرف شد (به جاهای دیگر نرسد)
     return true;
   }
 
@@ -88,7 +86,6 @@ class _RemoteScreenState extends State<RemoteScreen> {
       return;
     }
 
-    // اتصال خودکار فقط اگر دستگاه در نامش «daewoo» یا «dw» باشد
     if (auto && results.length == 1) {
       final name = results.first.device.platformName.toLowerCase();
       if (name.contains('daewoo') || name.contains('dw')) {
@@ -174,7 +171,6 @@ class _RemoteScreenState extends State<RemoteScreen> {
         title: Text(widget.size == RemoteSize.large ? 'کنترل بزرگ' : 'کنترل کوچک'),
         actions: [
           if (widget.mode.isBluetooth) ...[
-            // دکمه Debug — شناسایی دکمه‌های ریموت فیزیکی
             IconButton(
               icon: const Icon(Icons.bug_report_rounded),
               tooltip: 'Debug دکمه‌های ریموت فیزیکی',
@@ -183,7 +179,6 @@ class _RemoteScreenState extends State<RemoteScreen> {
                 MaterialPageRoute(builder: (_) => const BtDebugScreen()),
               ),
             ),
-            // دکمه تغییر دستگاه BT
             IconButton(
               icon: Icon(Icons.bluetooth_searching_rounded,
                   color: connected ? AppColors.success : AppColors.text3),
@@ -236,12 +231,14 @@ class _RemoteScreenState extends State<RemoteScreen> {
                   opacity: _lastPhysicalAction != null ? 1 : 0,
                   duration: const Duration(milliseconds: 200),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                     decoration: BoxDecoration(
                       color: accent.withOpacity(0.9),
                       borderRadius: BorderRadius.circular(999),
                       boxShadow: [
-                        BoxShadow(color: accent.withOpacity(0.4), blurRadius: 16),
+                        BoxShadow(
+                            color: accent.withOpacity(0.4), blurRadius: 16),
                       ],
                     ),
                     child: Row(
@@ -270,21 +267,21 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   String _physicalActionLabel(RemoteAction action) {
     switch (action) {
-      case RemoteAction.channelUp:        return 'کانال بالا ▲';
-      case RemoteAction.channelDown:      return 'کانال پایین ▼';
-      case RemoteAction.volumeUp:         return 'صدا بیشتر +';
-      case RemoteAction.volumeDown:       return 'صدا کمتر −';
-      case RemoteAction.togglePlayPause:  return 'پخش / توقف ⏯';
-      case RemoteAction.back:             return 'برگشت ↩';
-      case RemoteAction.ok:               return 'تأیید ✓';
-      case RemoteAction.custom1:          return 'دکمه سفارشی ۱';
-      case RemoteAction.custom2:          return 'دکمه سفارشی ۲';
+      case RemoteAction.channelUp:       return 'کانال بالا ▲';
+      case RemoteAction.channelDown:     return 'کانال پایین ▼';
+      case RemoteAction.volumeUp:        return 'صدا بیشتر +';
+      case RemoteAction.volumeDown:      return 'صدا کمتر −';
+      case RemoteAction.togglePlayPause: return 'پخش / توقف ⏯';
+      case RemoteAction.back:            return 'برگشت ↩';
+      case RemoteAction.ok:              return 'تأیید ✓';
+      case RemoteAction.custom1:         return 'دکمه سفارشی ۱';
+      case RemoteAction.custom2:         return 'دکمه سفارشی ۲';
     }
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════
-//  کنترل بزرگ
+//  کنترل بزرگ — تمام دکمه‌ها طبق طرح HTML مرجع
 // ════════════════════════════════════════════════════════════════════════
 class _LargeRemote extends StatelessWidget {
   const _LargeRemote({required this.accent, required this.onPress});
@@ -295,6 +292,7 @@ class _LargeRemote extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       children: [
+        // ── ردیف ۱: Power + Source ──────────────────────────────────────
         Row(
           children: [
             Expanded(
@@ -317,6 +315,8 @@ class _LargeRemote extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
+
+        // ── کی‌پد اعداد ۱–۹، Return، ۰، Info ────────────────────────────
         GridView.count(
           crossAxisCount: 3,
           shrinkWrap: true,
@@ -327,61 +327,116 @@ class _LargeRemote extends StatelessWidget {
           children: [
             for (final n in ['1', '2', '3', '4', '5', '6', '7', '8', '9'])
               RemoteButton(
-                  onTap: () => onPress('num_$n'),
-                  child: Text(n, style: const TextStyle(fontSize: 16))),
+                onTap: () => onPress('num_$n'),
+                child: Text(n, style: const TextStyle(fontSize: 16)),
+              ),
             RemoteButton(
-                onTap: () => onPress('return'),
-                child: const Icon(Icons.replay_rounded)),
+              onTap: () => onPress('return'),
+              child: const Icon(Icons.replay_rounded),
+            ),
             RemoteButton(
-                onTap: () => onPress('num_0'),
-                child: const Text('0', style: TextStyle(fontSize: 16))),
+              onTap: () => onPress('num_0'),
+              child: const Text('0', style: TextStyle(fontSize: 16)),
+            ),
             RemoteButton(
-                onTap: () => onPress('info'),
-                child: const Icon(Icons.info_outline_rounded)),
+              onTap: () => onPress('info'),
+              child: const Icon(Icons.info_outline_rounded),
+            ),
           ],
         ),
         const SizedBox(height: 16),
+
+        // ── NavPad دایره‌ای ──────────────────────────────────────────────
         _NavPad(onPress: onPress),
         const SizedBox(height: 16),
+
+        // ── VOL / HOME / CH (ردیف بالا) ─────────────────────────────────
         Row(
           children: [
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('vol_up'),
-                    child: const Text('+', style: TextStyle(fontSize: 20)))),
+              child: RemoteButton(
+                label: 'VOL',
+                onTap: () => onPress('vol_up'),
+                child: const Text('+', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    accent: accent.withOpacity(0.25),
-                    onTap: () => onPress('home'),
-                    child: const Icon(Icons.home_rounded))),
+              child: RemoteButton(
+                accent: accent.withOpacity(0.25),
+                onTap: () => onPress('home'),
+                child: const Icon(Icons.home_rounded),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('ch_up'),
-                    child: const Icon(Icons.keyboard_arrow_up_rounded))),
+              child: RemoteButton(
+                label: 'CH',
+                onTap: () => onPress('ch_up'),
+                child: const Icon(Icons.keyboard_arrow_up_rounded),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
+
+        // ── VOL− / MUTE / CH− (ردیف پایین) ─────────────────────────────
         Row(
           children: [
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('vol_down'),
-                    child: const Text('−', style: TextStyle(fontSize: 20)))),
+              child: RemoteButton(
+                onTap: () => onPress('vol_down'),
+                child: const Text('−', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('mute'),
-                    child: const Icon(Icons.volume_off_rounded))),
+              child: RemoteButton(
+                onTap: () => onPress('mute'),
+                child: const Icon(Icons.volume_off_rounded),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('ch_down'),
-                    child: const Icon(Icons.keyboard_arrow_down_rounded))),
+              child: RemoteButton(
+                onTap: () => onPress('ch_down'),
+                child: const Icon(Icons.keyboard_arrow_down_rounded),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // ── ردیف MENU ────────────────────────────────────────────────────
+        Row(
+          children: [
+            Expanded(
+              child: RemoteButton(
+                onTap: () => onPress('back'),
+                child: const Icon(Icons.arrow_back_rounded),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RemoteButton(
+                onTap: () => onPress('menu'),
+                child: const Icon(Icons.menu_rounded),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RemoteButton(
+                onTap: () => onPress('exit'),
+                label: 'EXIT',
+                shape: RemoteButtonShape.tiny,
+                child: const Icon(Icons.logout_rounded, size: 16),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 16),
+
+        // ── دکمه‌های رنگی ────────────────────────────────────────────────
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
@@ -392,48 +447,149 @@ class _LargeRemote extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
+
+        // ── ردیف رسانه ۱: Rewind / Play-Pause / Forward ─────────────────
         Row(
           children: [
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('rewind'),
-                    child: const Icon(Icons.fast_rewind_rounded))),
+              child: RemoteButton(
+                onTap: () => onPress('rewind'),
+                child: const Icon(Icons.fast_rewind_rounded),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('play_pause'),
-                    child: const Icon(Icons.play_arrow_rounded))),
+              child: RemoteButton(
+                onTap: () => onPress('play_pause'),
+                child: const Icon(Icons.play_arrow_rounded),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('forward'),
-                    child: const Icon(Icons.fast_forward_rounded))),
+              child: RemoteButton(
+                onTap: () => onPress('forward'),
+                child: const Icon(Icons.fast_forward_rounded),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
+
+        // ── ردیف رسانه ۲: Prev / Stop / Next ────────────────────────────
         Row(
           children: [
             Expanded(
-                child: RemoteButton(
-                    shape: RemoteButtonShape.tiny,
-                    label: 'EXIT',
-                    onTap: () => onPress('exit'),
-                    child: const Icon(Icons.logout_rounded, size: 16))),
+              child: RemoteButton(
+                onTap: () => onPress('prev'),
+                child: const Icon(Icons.skip_previous_rounded),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('record'),
-                    child: const Icon(Icons.fiber_manual_record_rounded,
-                        color: AppColors.danger))),
+              child: RemoteButton(
+                onTap: () => onPress('stop'),
+                child: const Icon(Icons.stop_rounded),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    shape: RemoteButtonShape.tiny,
-                    label: 'EPG',
-                    onTap: () => onPress('epg'),
-                    child: const Icon(Icons.grid_view_rounded, size: 16))),
+              child: RemoteButton(
+                onTap: () => onPress('next'),
+                child: const Icon(Icons.skip_next_rounded),
+              ),
+            ),
           ],
         ),
+        const SizedBox(height: 8),
+
+        // ── ردیف: Record / EPG ───────────────────────────────────────────
+        Row(
+          children: [
+            Expanded(
+              child: RemoteButton(
+                onTap: () => onPress('record'),
+                child: const Icon(Icons.fiber_manual_record_rounded,
+                    color: AppColors.danger),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RemoteButton(
+                shape: RemoteButtonShape.tiny,
+                label: 'EPG',
+                onTap: () => onPress('epg'),
+                child: const Icon(Icons.grid_view_rounded, size: 16),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // ── ردیف: TEXT / AUDIO / SUB.T ───────────────────────────────────
+        Row(
+          children: [
+            Expanded(
+              child: RemoteButton(
+                shape: RemoteButtonShape.tiny,
+                label: 'TEXT',
+                onTap: () => onPress('text'),
+                child: const Icon(Icons.text_snippet_outlined, size: 16),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RemoteButton(
+                shape: RemoteButtonShape.tiny,
+                label: 'AUDIO',
+                onTap: () => onPress('audio'),
+                child: const Icon(Icons.audiotrack_rounded, size: 16),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RemoteButton(
+                shape: RemoteButtonShape.tiny,
+                label: 'SUB.T',
+                onTap: () => onPress('subtitle'),
+                child: const Icon(Icons.subtitles_outlined, size: 16),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // ── ردیف: RADIO / ZOOM / SHIFT ───────────────────────────────────
+        Row(
+          children: [
+            Expanded(
+              child: RemoteButton(
+                shape: RemoteButtonShape.tiny,
+                label: 'RADIO',
+                onTap: () => onPress('radio'),
+                child: const Icon(Icons.radio_rounded, size: 16),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RemoteButton(
+                shape: RemoteButtonShape.tiny,
+                label: 'ZOOM',
+                onTap: () => onPress('zoom'),
+                child: const Icon(Icons.zoom_in_rounded, size: 16),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RemoteButton(
+                shape: RemoteButtonShape.tiny,
+                label: 'SHIFT',
+                onTap: () => onPress('shift'),
+                child: const Icon(Icons.swap_vert_rounded, size: 16),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
       ],
     );
   }
@@ -454,6 +610,7 @@ class _SmallRemote extends StatelessWidget {
     final locked = !mode.supportsMouseAndMic;
     return ListView(
       children: [
+        // ── Power ────────────────────────────────────────────────────────
         Center(
           child: SizedBox(
             width: 64,
@@ -466,6 +623,8 @@ class _SmallRemote extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
+
+        // ── Mic (فقط بلوتوث) ─────────────────────────────────────────────
         Center(
           child: SizedBox(
             width: 64,
@@ -479,48 +638,71 @@ class _SmallRemote extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+
+        // ── NavPad ───────────────────────────────────────────────────────
         _NavPad(onPress: onPress),
         const SizedBox(height: 16),
+
+        // ── Back / Home / Menu ───────────────────────────────────────────
         Row(
           children: [
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('back'),
-                    child: const Icon(Icons.arrow_back_rounded))),
+              child: RemoteButton(
+                onTap: () => onPress('back'),
+                child: const Icon(Icons.arrow_back_rounded),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    accent: accent.withOpacity(0.2),
-                    onTap: () => onPress('home'),
-                    child: const Icon(Icons.home_rounded))),
+              child: RemoteButton(
+                accent: accent.withOpacity(0.2),
+                onTap: () => onPress('home'),
+                child: const Icon(Icons.home_rounded),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('menu'),
-                    child: const Icon(Icons.menu_rounded))),
+              child: RemoteButton(
+                onTap: () => onPress('menu'),
+                child: const Icon(Icons.menu_rounded),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
+
+        // ── Play-Pause / Source ──────────────────────────────────────────
         Row(
           children: [
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('play_pause'),
-                    child: const Icon(Icons.play_arrow_rounded))),
+              child: RemoteButton(
+                onTap: () => onPress('play_pause'),
+                child: const Icon(Icons.play_arrow_rounded),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('source'),
-                    child: const Icon(Icons.input_rounded))),
+              child: RemoteButton(
+                onTap: () => onPress('source'),
+                child: const Icon(Icons.input_rounded),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
+
+        // ── Vol+ / Mouse Toggle / CH+ ────────────────────────────────────
         Row(
           children: [
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('vol_up'),
-                    child: const Text('+'))),
+              child: RemoteButton(
+                label: 'VOL',
+                onTap: () => onPress('vol_up'),
+                child: const Text('+',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: RemoteButton(
                 disabled: locked,
@@ -529,31 +711,49 @@ class _SmallRemote extends StatelessWidget {
                 child: const Icon(Icons.mouse_rounded),
               ),
             ),
+            const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('ch_up'),
-                    child: const Icon(Icons.keyboard_arrow_up_rounded))),
+              child: RemoteButton(
+                label: 'CH',
+                onTap: () => onPress('ch_up'),
+                child: const Icon(Icons.keyboard_arrow_up_rounded),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
+
+        // ── Vol− / Mute / CH− ───────────────────────────────────────────
         Row(
           children: [
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('vol_down'),
-                    child: const Text('−'))),
+              child: RemoteButton(
+                onTap: () => onPress('vol_down'),
+                child: const Text('−',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('mute'),
-                    child: const Icon(Icons.volume_off_rounded))),
+              child: RemoteButton(
+                onTap: () => onPress('mute'),
+                child: const Icon(Icons.volume_off_rounded),
+              ),
+            ),
+            const SizedBox(width: 8),
             Expanded(
-                child: RemoteButton(
-                    onTap: () => onPress('ch_down'),
-                    child: const Icon(Icons.keyboard_arrow_down_rounded))),
+              child: RemoteButton(
+                onTap: () => onPress('ch_down'),
+                child: const Icon(Icons.keyboard_arrow_down_rounded),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 16),
+
+        // ── تاچ‌پد موس (فقط بلوتوث) ─────────────────────────────────────
         Touchpad(locked: locked),
+        const SizedBox(height: 16),
       ],
     );
   }
@@ -580,36 +780,37 @@ class _NavPad extends StatelessWidget {
               height: 140,
               child: Container(
                 decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.panel2,
-                    border: Border.all(color: AppColors.line)),
+                  shape: BoxShape.circle,
+                  color: AppColors.panel2,
+                  border: Border.all(color: AppColors.line),
+                ),
               ),
             ),
             Positioned(
-                top: 0,
-                child: _arrow(
-                    Icons.keyboard_arrow_up_rounded, () => onPress('up'))),
+              top: 0,
+              child: _arrow(Icons.keyboard_arrow_up_rounded, () => onPress('up')),
+            ),
             Positioned(
-                bottom: 0,
-                child: _arrow(
-                    Icons.keyboard_arrow_down_rounded, () => onPress('down'))),
+              bottom: 0,
+              child: _arrow(Icons.keyboard_arrow_down_rounded, () => onPress('down')),
+            ),
             Positioned(
-                left: 0,
-                child: _arrow(
-                    Icons.keyboard_arrow_left_rounded, () => onPress('left'))),
+              left: 0,
+              child: _arrow(Icons.keyboard_arrow_left_rounded, () => onPress('left')),
+            ),
             Positioned(
-                right: 0,
-                child: _arrow(Icons.keyboard_arrow_right_rounded,
-                    () => onPress('right'))),
+              right: 0,
+              child: _arrow(Icons.keyboard_arrow_right_rounded, () => onPress('right')),
+            ),
             SizedBox(
               width: 60,
               height: 60,
               child: RemoteButton(
-                  shape: RemoteButtonShape.round,
-                  onTap: () => onPress('ok'),
-                  child: const Text('OK',
-                      style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w800))),
+                shape: RemoteButtonShape.round,
+                onTap: () => onPress('ok'),
+                child: const Text('OK',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+              ),
             ),
           ],
         ),
@@ -620,8 +821,11 @@ class _NavPad extends StatelessWidget {
   Widget _arrow(IconData icon, VoidCallback onTap) => SizedBox(
         width: 48,
         height: 48,
-        child:
-            RemoteButton(shape: RemoteButtonShape.round, onTap: onTap, child: Icon(icon)),
+        child: RemoteButton(
+          shape: RemoteButtonShape.round,
+          onTap: onTap,
+          child: Icon(icon),
+        ),
       );
 }
 

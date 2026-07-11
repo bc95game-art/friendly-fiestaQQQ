@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/remote_mode.dart';
 import '../services/ir_service.dart';
 import '../services/permissions_service.dart';
@@ -11,29 +12,81 @@ class SizePickerScreen extends StatelessWidget {
 
   Future<void> _open(BuildContext context, RemoteSize size) async {
     if (mode.isIr) {
+      // ── بررسی وجود سخت‌افزار IR ─────────────────────────────────────────
       final hasIr = await IrService.instance.hasIrEmitter();
       if (!hasIr) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('گوشی شما فرستنده مادون‌قرمز (IR) سخت‌افزاری ندارد')),
+            const SnackBar(
+              content: Text('گوشی شما فرستنده مادون‌قرمز (IR) سخت‌افزاری ندارد'),
+            ),
           );
         }
         return;
       }
     } else {
-      final granted = await PermissionsService.requestBluetoothPermissions();
-      if (!granted) {
-        if (context.mounted) {
+      // ── درخواست مجوزهای بلوتوث ──────────────────────────────────────────
+      final result = await PermissionsService.requestBluetoothPermissions();
+
+      if (!result.granted) {
+        if (!context.mounted) return;
+
+        if (result.permanentlyDenied) {
+          // مجوز از تنظیمات رد شده — باید کاربر را به تنظیمات اپ هدایت کنیم
+          await showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: AppColors.panel,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppColors.radiusMd),
+                side: const BorderSide(color: AppColors.line),
+              ),
+              title: const Text(
+                'مجوز بلوتوث لازم است',
+                style: TextStyle(color: AppColors.text1, fontWeight: FontWeight.w700),
+              ),
+              content: const Text(
+                'مجوز بلوتوث از تنظیمات رد شده است.\n'
+                'برای فعال‌سازی دوباره، لطفاً به تنظیمات اپلیکیشن بروید و مجوز را اعطا کنید.',
+                style: TextStyle(color: AppColors.text2, height: 1.7),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('انصراف',
+                      style: TextStyle(color: AppColors.text3)),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await openAppSettings();
+                  },
+                  child: const Text('باز کردن تنظیمات',
+                      style: TextStyle(
+                          color: AppColors.btAccent,
+                          fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+          );
+        } else {
+          // کاربر رد کرد (ولی permanently denied نیست — دفعه بعد می‌توان دوباره درخواست کرد)
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('برای اتصال بلوتوث، مجوز لازم است')),
+            const SnackBar(
+              content: Text('برای اتصال بلوتوث، مجوز لازم است — دوباره امتحان کنید'),
+              duration: Duration(seconds: 3),
+            ),
           );
         }
         return;
       }
+
+      // درخواست مجوز میکروفون (اختیاری — اگر رد شود ادامه می‌دهیم)
       if (size == RemoteSize.small) {
         await PermissionsService.requestMicrophonePermission();
       }
     }
+
     if (context.mounted) {
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => RemoteScreen(mode: mode, size: size)),
@@ -75,7 +128,12 @@ class SizePickerScreen extends StatelessWidget {
 }
 
 class _SizeCard extends StatelessWidget {
-  const _SizeCard({required this.title, required this.subtitle, required this.accent, required this.onTap});
+  const _SizeCard({
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.onTap,
+  });
   final String title, subtitle;
   final Color accent;
   final VoidCallback onTap;
@@ -98,7 +156,8 @@ class _SizeCard extends StatelessWidget {
             Container(
               width: 44,
               height: 44,
-              decoration: BoxDecoration(color: accent.withOpacity(0.15), shape: BoxShape.circle),
+              decoration: BoxDecoration(
+                  color: accent.withOpacity(0.15), shape: BoxShape.circle),
               child: Icon(Icons.smartphone_rounded, color: accent),
             ),
             const SizedBox(width: 14),
@@ -106,12 +165,19 @@ class _SizeCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text1)),
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.text1)),
                   const SizedBox(height: 4),
-                  Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.text2)),
+                  Text(subtitle,
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.text2)),
                 ],
               ),
             ),
+            const Icon(Icons.chevron_left, color: AppColors.text3),
           ],
         ),
       ),
