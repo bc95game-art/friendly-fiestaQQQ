@@ -37,7 +37,7 @@ class RemoteInputHandler {
   RemoteInputHandler._();
 
   // ── نگاشت پیش‌فرض (دکمه‌های شناخته‌شده) ─────────────────────────────────
-  static const Map<LogicalKeyboardKey, RemoteAction> _defaultMap = {
+  static final Map<LogicalKeyboardKey, RemoteAction> _defaultMap = {
     LogicalKeyboardKey.arrowLeft:      RemoteAction.channelDown,
     LogicalKeyboardKey.arrowRight:     RemoteAction.channelUp,
     LogicalKeyboardKey.mediaPlayPause: RemoteAction.togglePlayPause,
