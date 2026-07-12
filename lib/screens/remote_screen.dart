@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/remote_mode.dart';
 import '../services/bt_hid_service.dart';
+import '../services/permissions_service.dart';
 import '../services/remote_controller.dart';
 import '../theme/colors.dart';
 import '../widgets/remote_button.dart';
@@ -25,12 +26,32 @@ class _RemoteScreenState extends State<RemoteScreen> {
   // ── دیباونس: جلوگیری از ارسال چند فرمان همزمان هنگام ضربه‌های سریع ──
   DateTime? _lastPressTime;
 
+  // ── تشخیص «نوسان اتصال»: وقتی وضعیت چند بار پشت‌سرهم بین در-حال-اتصال
+  // و قطع‌شده نوسان می‌کند (یعنی تلویزیون اتصالی که گوشی شروع کرده را رد
+  // می‌کند)، به‌جای تکرار بی‌نتیجه، روش جایگزین (قابل‌مشاهده کردن گوشی) را
+  // پیشنهاد می‌دهیم.
+  int _connectingBounces = 0;
+  bool _showAlternativeHint = false;
+
   @override
   void initState() {
     super.initState();
     if (widget.mode.isBluetooth) {
       _btSub = BtHidService.instance.stateStream.listen((s) {
-        if (mounted) setState(() => _btState = s);
+        if (!mounted) return;
+        setState(() {
+          if (s == BtConnState.connecting) {
+            _connectingBounces++;
+          } else if (s == BtConnState.connected) {
+            _connectingBounces = 0;
+            _showAlternativeHint = false;
+          }
+          if (_connectingBounces >= 3 &&
+              (s == BtConnState.disconnected || s == BtConnState.error)) {
+            _showAlternativeHint = true;
+          }
+          _btState = s;
+        });
       });
       _initBluetooth();
     }
@@ -49,22 +70,43 @@ class _RemoteScreenState extends State<RemoteScreen> {
       return;
     }
     // اگر فقط یک دستگاه Pair شده وجود دارد، مستقیم به آن وصل شو
-    final devices = await BtHidService.instance.bondedDevices();
+    var devices = await BtHidService.instance.bondedDevices();
+    if (devices.isEmpty && BtHidService.instance.lastCallWasPermissionDenied) {
+      // رفع همان باگ «مجوز هنوز نرسیده» — یک تلاش خودکار مجدد بعد از کمی تاخیر
+      await Future.delayed(const Duration(milliseconds: 400));
+      devices = await BtHidService.instance.bondedDevices();
+    }
     if (devices.length == 1 && mounted) {
       await BtHidService.instance.connect(devices.first.address);
     }
   }
 
   Future<void> _pickDevice() async {
-    final devices = await BtHidService.instance.bondedDevices();
+    var devices = await BtHidService.instance.bondedDevices();
+
+    // ⚠️ رفع باگ: قبلاً وقتی مجوز BLUETOOTH_CONNECT هنوز واقعاً به سیستم
+    // نرسیده بود (مثلاً چند صد میلی‌ثانیه تاخیر بعد از تایید کاربر —
+    // روی برخی گوشی‌ها مثل شیائومی/ردمی دیده شده)، سمت اندروید
+    // SecurityException می‌گرفت و لیست خالی برمی‌گشت، و پیام گمراه‌کننده‌ی
+    // «دستگاهی یافت نشد» نشان داده می‌شد درحالی‌که تلویزیون واقعاً
+    // Pair بود. حالا این حالت را جدا تشخیص می‌دهیم و یک بار خودکار
+    // دوباره تلاش می‌کنیم.
+    if (devices.isEmpty && BtHidService.instance.lastCallWasPermissionDenied) {
+      await PermissionsService.requestBluetoothPermissions();
+      await Future.delayed(const Duration(milliseconds: 400));
+      devices = await BtHidService.instance.bondedDevices();
+    }
     if (!mounted) return;
 
     if (devices.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      final permissionIssue = BtHidService.instance.lastCallWasPermissionDenied;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
-          'هیچ دستگاهی پیدا نشد — اول باید بلوتوث تلویزیون را از «تنظیمات گوشی ← بلوتوث» Pair کنید',
+          permissionIssue
+              ? 'مجوز بلوتوث هنوز فعال نشده — از تنظیمات گوشی ← اپ‌ها ← کنترل هوشمند دوو ← مجوزها، دسترسی «دستگاه‌های اطراف» را فعال کنید'
+              : 'هیچ دستگاهی پیدا نشد — اول باید بلوتوث تلویزیون را از «تنظیمات گوشی ← بلوتوث» Pair کنید',
         ),
-        duration: Duration(seconds: 5),
+        duration: const Duration(seconds: 6),
       ));
       return;
     }
@@ -106,6 +148,63 @@ class _RemoteScreenState extends State<RemoteScreen> {
   void dispose() {
     _btSub?.cancel();
     super.dispose();
+  }
+
+  /// روش جایگزین اتصال: گوشی را قابل‌مشاهده می‌کند و راهنمای وصل‌شدن از
+  /// روی خودِ تلویزیون را نشان می‌دهد. برای تلویزیون‌هایی لازم است که
+  /// اتصال HID آغازشده از سمت گوشی را نمی‌پذیرند (نوسان در-حال-اتصال ⇄
+  /// قطع‌شده) — طبق تجربه‌ی مستندشده‌ی توسعه‌دهندگان دیگر با همین API
+  /// اندروید (BluetoothHidDevice)، برخی میزبان‌ها فقط وقتی خودشان
+  /// اتصال را آغاز کنند آن را می‌پذیرند.
+  Future<void> _tryAlternativeConnection() async {
+    final permitted =
+        await PermissionsService.requestDiscoverabilityPermission();
+    if (!permitted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('برای قابل‌مشاهده کردن گوشی، مجوز بلوتوث لازم است'),
+        ));
+      }
+      return;
+    }
+    final ok = await BtHidService.instance.requestDiscoverable();
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('باز کردن حالت قابل‌مشاهده ناموفق بود'),
+      ));
+      return;
+    }
+    final name = await BtHidService.instance.localDeviceName();
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppColors.radiusMd),
+          side: const BorderSide(color: AppColors.line),
+        ),
+        title: const Text('اتصال از روی تلویزیون',
+            style: TextStyle(color: AppColors.text1, fontWeight: FontWeight.w700)),
+        content: Text(
+          'گوشی شما تا ۲ دقیقه قابل‌مشاهده است.\n\n'
+          'حالا از روی خودِ تلویزیون:\n'
+          '۱. تنظیمات ← بلوتوث ← افزودن دستگاه\n'
+          '۲. نام «${name ?? 'کنترل هوشمند دوو'}» را از لیست انتخاب کنید\n\n'
+          'این روش وقتی اتصال از داخل اپ مدام قطع می‌شود، معمولاً '
+          'قابل‌اعتمادتر است.',
+          style: const TextStyle(color: AppColors.text2, height: 1.8),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('متوجه شدم',
+                style: TextStyle(color: AppColors.btAccent, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
   }
 
   // ── ارسال دستور با دیباونس ۲۵۰ms ────────────────────────────────────────
@@ -190,9 +289,59 @@ class _RemoteScreenState extends State<RemoteScreen> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: widget.size == RemoteSize.large
-              ? _LargeRemote(accent: accent, onPress: _press)
-              : _SmallRemote(accent: accent, mode: widget.mode, onPress: _press),
+          child: Column(
+            children: [
+              if (_showAlternativeHint) _AlternativeConnectionBanner(
+                onTap: _tryAlternativeConnection,
+              ),
+              Expanded(
+                child: widget.size == RemoteSize.large
+                    ? _LargeRemote(accent: accent, onPress: _press)
+                    : _SmallRemote(
+                        accent: accent, mode: widget.mode, onPress: _press),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── بنر پیشنهاد روش جایگزین اتصال (وقتی اتصال از داخل اپ نوسان دارد) ──
+class _AlternativeConnectionBanner extends StatelessWidget {
+  const _AlternativeConnectionBanner({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppColors.radiusSm),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.btAccentDim,
+            borderRadius: BorderRadius.circular(AppColors.radiusSm),
+            border: Border.all(color: AppColors.btAccent.withOpacity(0.4)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.info_outline_rounded,
+                  color: AppColors.btAccentLight, size: 18),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'اتصال از اپ ناموفق است — روش جایگزین را امتحان کنید (اتصال از روی تلویزیون)',
+                  style: TextStyle(color: AppColors.text1, fontSize: 12),
+                ),
+              ),
+              const Icon(Icons.chevron_left_rounded, color: AppColors.btAccentLight),
+            ],
+          ),
         ),
       ),
     );
@@ -348,7 +497,7 @@ class _LargeRemote extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        // ── دکمه‌های رنگی (فقط IR — بلوتوث پیام «پشتیبانی نمی‌شود» می‌دهد) ──
+        // ── دکمه‌های رنگی (هم IR و هم بلوتوث — کدهای واقعی هسته لینوکس) ──
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [

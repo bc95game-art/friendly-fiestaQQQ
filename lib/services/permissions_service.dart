@@ -43,4 +43,12 @@ class PermissionsService {
   static Future<bool> checkBluetoothGranted() async {
     return await Permission.bluetoothConnect.isGranted;
   }
+
+  /// مجوز لازم برای «قابل مشاهده کردن» گوشی (روش جایگزین اتصال — وقتی
+  /// تلویزیون باید خودش گوشی را در لیست بلوتوث پیدا کند). فقط روی اندروید
+  /// ۱۲+ لازم است؛ در نسخه‌های قدیمی‌تر بدون مجوز رانتایم کار می‌کند.
+  static Future<bool> requestDiscoverabilityPermission() async {
+    final status = await Permission.bluetoothAdvertise.request();
+    return status.isGranted || status.isLimited;
+  }
 }

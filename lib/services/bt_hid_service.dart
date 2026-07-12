@@ -92,7 +92,13 @@ class BtHidService {
   /// دستگاه‌های بلوتوثی که قبلاً از تنظیمات گوشی Pair شده‌اند.
   /// تلویزیون باید ابتدا از تنظیمات بلوتوث خودِ گوشی Pair شود؛ این اپ
   /// خودش اسکن/Pair نمی‌کند — فقط از لیست دستگاه‌های از‌قبل‌جفت‌شده انتخاب می‌کند.
+  /// اگر true باشد، آخرین فراخوانی bondedDevices/connect به‌خاطر نبودِ
+  /// واقعیِ مجوز BLUETOOTH_CONNECT (نه نبودِ دستگاه Pair‌شده) شکست خورده.
+  /// UI باید بر اساس این پرچم پیام درست را نشان دهد، نه «دستگاهی یافت نشد».
+  bool lastCallWasPermissionDenied = false;
+
   Future<List<BtBondedDevice>> bondedDevices() async {
+    lastCallWasPermissionDenied = false;
     try {
       final result =
           await _channel.invokeMethod<List<Object?>>('bondedDevices') ?? [];
@@ -106,12 +112,14 @@ class BtHidService {
             );
           })
           .toList();
-    } on PlatformException {
+    } on PlatformException catch (e) {
+      if (e.code == 'permission_denied') lastCallWasPermissionDenied = true;
       return [];
     }
   }
 
   Future<bool> connect(String address) async {
+    lastCallWasPermissionDenied = false;
     _emit(BtConnState.connecting);
     try {
       final ok =
@@ -119,7 +127,8 @@ class BtHidService {
               false;
       if (!ok) _emit(BtConnState.error);
       return ok;
-    } on PlatformException {
+    } on PlatformException catch (e) {
+      if (e.code == 'permission_denied') lastCallWasPermissionDenied = true;
       _emit(BtConnState.error);
       return false;
     }
@@ -170,6 +179,33 @@ class BtHidService {
       return await _channel.invokeMethod<bool>('sendMouseClick') ?? false;
     } on PlatformException {
       return false;
+    }
+  }
+
+  /// روش جایگزین اتصال: گوشی را برای ۱۲۰ ثانیه «قابل مشاهده» می‌کند تا
+  /// کاربر از روی خودِ تلویزیون (نه از این اپ) به آن وصل شود. این روش
+  /// وقتی «اتصال از گوشی» مدام قطع می‌شود (وضعیت بین در-حال-اتصال و
+  /// قطع‌شده نوسان می‌کند) قابل‌اعتمادتر است — چون بعضی تلویزیون‌ها فقط
+  /// وقتی خودشان شروع‌کننده‌ی اتصال HID باشند آن را می‌پذیرند.
+  Future<bool> requestDiscoverable() async {
+    try {
+      return await _channel.invokeMethod<bool>('requestDiscoverable') ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  /// نام بلوتوثی این گوشی — برای راهنمایی کاربر که دنبال چه نامی در لیست
+  /// بلوتوث تلویزیون بگردد.
+  Future<String?> localDeviceName() async {
+    try {
+      return await _channel.invokeMethod<String>('localName');
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
     }
   }
 }

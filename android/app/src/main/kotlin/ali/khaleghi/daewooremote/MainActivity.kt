@@ -8,10 +8,14 @@ import android.bluetooth.BluetoothHidDeviceAppSdpSettings
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
+import android.content.Intent
 import android.hardware.ConsumerIrManager
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -184,8 +188,20 @@ class MainActivity : FlutterActivity() {
                 }
                 when (call.method) {
                     "register" -> registerHid(result)
-                    "bondedDevices" -> result.success(bondedDevicesList())
+                    "bondedDevices" -> {
+                        if (!hasConnectPermission()) {
+                            result.error("permission_denied",
+                                "مجوز BLUETOOTH_CONNECT هنوز به این اپ داده نشده", null)
+                        } else {
+                            result.success(bondedDevicesList())
+                        }
+                    }
                     "connect" -> {
+                        if (!hasConnectPermission()) {
+                            result.error("permission_denied",
+                                "مجوز BLUETOOTH_CONNECT هنوز به این اپ داده نشده", null)
+                            return@setMethodCallHandler
+                        }
                         val address = call.argument<String>("address")
                         connectTo(address, result)
                     }
@@ -193,6 +209,8 @@ class MainActivity : FlutterActivity() {
                         disconnectCurrent()
                         result.success(true)
                     }
+                    "requestDiscoverable" -> requestDiscoverable(result)
+                    "localName" -> result.success(adapter()?.name)
                     "sendConsumer" -> {
                         val usage = call.argument<Int>("usage") ?: 0
                         result.success(sendConsumerUsage(usage))
@@ -220,6 +238,23 @@ class MainActivity : FlutterActivity() {
             bluetoothAdapter = manager?.adapter
         }
         return bluetoothAdapter
+    }
+
+    /// بررسی واقعی و مستقیم (نه فقط چیزی که سمت Dart فکر می‌کند) اینکه آیا
+    /// مجوز BLUETOOTH_CONNECT همین الان از نگاه سیستم‌عامل داده شده یا نه.
+    ///
+    /// چرا این بررسی جداگانه لازم است؟ باگ گزارش‌شده («وصل شده ولی
+    /// می‌گفت دستگاهی یافت نشد») ناشی از این بود که adapter.bondedDevices
+    /// یک SecurityException پرتاب می‌کرد (چون مجوز واقعاً گرفته نشده بود)
+    /// و آن استثنا بی‌سروصدا به لیست خالی تبدیل می‌شد — یعنی کاربر پیام
+    /// گمراه‌کننده‌ی «دستگاهی یافت نشد» می‌دید، درحالی‌که مشکل واقعی نبود
+    /// مجوز بود، نه نبود دستگاه Pair‌شده. حالا این دو حالت را از هم جدا
+    /// می‌کنیم تا پیام درست به کاربر نشان داده شود.
+    private fun hasConnectPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        return ContextCompat.checkSelfPermission(
+            this, Manifest.permission.BLUETOOTH_CONNECT
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun registerHid(result: MethodChannel.Result) {
@@ -288,6 +323,29 @@ class MainActivity : FlutterActivity() {
                 hidEventSink?.success("disconnected")
             }
         }, BluetoothProfile.HID_DEVICE)
+    }
+
+    /// درخواست «قابل مشاهده» شدن گوشی برای ۱۲۰ ثانیه.
+    ///
+    /// چرا لازم است؟ روی برخی تلویزیون‌های اندرویدی (به‌خصوص باکس‌های
+    /// سفید-برچسب مثل این مدل که Bluetooth stack سازنده‌اش شبیه دستگاه‌های
+    /// غیر-اندرویدی (کامپیوتر/PC) رفتار می‌کند)، شروع اتصال HID از سمت
+    /// گوشی (hid.connect) همیشه قابل اعتماد نیست — طبق مستندات و تجربه‌ی
+    /// توسعه‌دهندگان دیگر با همین API (BluetoothHidDevice)، برخی
+    /// میزبان‌ها (host) فقط زمانی اتصال HID را می‌پذیرند که خودشان اتصال
+    /// را آغاز کنند، نه دستگاه ورودی (گوشی). راه‌حل واقعی: گوشی را قابل
+    /// مشاهده می‌کنیم تا از روی خودِ تلویزیون (تنظیمات ← بلوتوث ← افزودن
+    /// دستگاه) به آن وصل شود.
+    private fun requestDiscoverable(result: MethodChannel.Result) {
+        try {
+            val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+                putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 120)
+            }
+            startActivity(intent)
+            result.success(true)
+        } catch (e: Exception) {
+            result.success(false)
+        }
     }
 
     private fun bondedDevicesList(): List<Map<String, String>> {

@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- برای «قابل مشاهده کردن» گوشی (تا از روی خودِ تلویزیون بتوان به آن
+         وصل شد) — روش جایگزینِ اتصال وقتی اتصال از سمت گوشی ناپایدار است. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
 
     <!-- فرستنده مادون‌قرمز (فقط روی گوشی‌هایی که سخت‌افزار IR دارند فعال می‌شود) -->
     <uses-permission android:name="android.permission.TRANSMIT_IR" />

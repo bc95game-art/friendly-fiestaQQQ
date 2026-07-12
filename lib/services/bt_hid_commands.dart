@@ -45,7 +45,27 @@ class BtHidCommands {
     'play_pause': BtHidCommand(true, 0x00CD), // Play/Pause
     'rewind': BtHidCommand(true, 0x00B4), // Rewind
     'forward': BtHidCommand(true, 0x00B3), // Fast Forward
-    'info': BtHidCommand(true, 0x0061), // Data On Screen
+    // ⚠️ باگ رفع‌شده: کد قبلی «info» به‌اشتباه 0x0061 بود که در واقع کد
+    // Closed Caption (زیرنویس) است، نه Data On Screen. بر اساس جدول واقعی
+    // هسته لینوکس (drivers/hid/hid-input.c) که این کدها را به کلید واقعی
+    // اندروید تبدیل می‌کند: 0x060=Data On Screen (info) و 0x061=Closed
+    // Caption (subtitle) — این دو دقیقاً برعکس هم در کد قبلی بودند.
+    'info': BtHidCommand(true, 0x0060), // Data On Screen
+    'subtitle': BtHidCommand(true, 0x0061), // Closed Caption
+    // منبع کدهای زیر: drivers/hid/hid-input.c (پروژه لینوکس، متن‌باز و
+    // عمومی) — همان جدولی که اندروید برای تبدیل کد HID به دکمه واقعی
+    // (KEY_RED/GREEN/BLUE/YELLOW/PROGRAM/ASPECT_RATIO/AUDIO_TRACK) استفاده
+    // می‌کند. این‌ها حدسی نیستند، از سورس‌کد واقعی هسته استخراج شده‌اند.
+    'color_red': BtHidCommand(true, 0x0069),
+    'color_green': BtHidCommand(true, 0x006A),
+    'color_blue': BtHidCommand(true, 0x006B),
+    'color_yellow': BtHidCommand(true, 0x006C),
+    'epg': BtHidCommand(true, 0x008D), // Program Guide
+    // «Zoom» دکمه‌ی تکی‌ست (نه Zoom In/Out جداگانه)، نزدیک‌ترین معادل واقعی
+    // آن در جدول استاندارد Aspect Ratio (تعویض حالت نمایش/زوم) است.
+    'zoom': BtHidCommand(true, 0x006D), // Aspect Ratio
+    'audio_track': BtHidCommand(true, 0x0173), // Media Audio Track
+    'mic': BtHidCommand(true, 0x00CF), // Voice Command (دکمه میکروفون کنترل کوچک)
     'prev': BtHidCommand(true, 0x00B6), // Scan Previous Track
     'next': BtHidCommand(true, 0x00B5), // Scan Next Track
     'stop': BtHidCommand(true, 0x00B7), // Stop
@@ -61,4 +81,15 @@ class BtHidCommands {
     'num_8': BtHidCommand(false, 0x25),
     'num_9': BtHidCommand(false, 0x26),
   };
+
+  // ⚠️ عمداً نگاشت نشده‌اند (چون کد استاندارد و تضمینی برای آن‌ها در جدول
+  // رسمی HID/هسته لینوکس پیدا نشد — به‌جای حدس زدن، پیام صریح «پشتیبانی
+  // نمی‌شود» نمایش داده می‌شود):
+  //  • text (تلتکست): هیچ کد استاندارد Consumer برای Teletext وجود ندارد.
+  //  • radio: کد اختصاصی «رادیو» در جدول استاندارد نیست (فقط Tuner/TV عمومی
+  //    هست که معادل دقیق رادیوی دوو نیست).
+  //  • shift: در ریموت اصلی یک کلید ثانویه‌ی اعداد/نمادهاست، نه Shift
+  //    کیبورد استاندارد — بدون کد ضبط‌شده‌ی واقعی نمی‌توان آن را حدس زد.
+  //  • source: هیچ کد Consumer استاندارد و به‌طور گسترده پشتیبانی‌شده برای
+  //    تعویض منبع ورودی روی Android TV وجود ندارد.
 }
