@@ -56,10 +56,13 @@ class BtHidCommands {
     // عمومی) — همان جدولی که اندروید برای تبدیل کد HID به دکمه واقعی
     // (KEY_RED/GREEN/BLUE/YELLOW/PROGRAM/ASPECT_RATIO/AUDIO_TRACK) استفاده
     // می‌کند. این‌ها حدسی نیستند، از سورس‌کد واقعی هسته استخراج شده‌اند.
-    'color_red': BtHidCommand(true, 0x0069),
-    'color_green': BtHidCommand(true, 0x006A),
-    'color_blue': BtHidCommand(true, 0x006B),
-    'color_yellow': BtHidCommand(true, 0x006C),
+    'color_red': BtHidCommand(true, 0x0069),    // KEY_RED
+    'color_green': BtHidCommand(true, 0x006A),  // KEY_GREEN
+    // ⚠️ رفع باگ «رنگ‌ها جابجا»: قبلاً blue=0x006B و yellow=0x006C بود که
+    // برعکس جدول واقعی hid-input.c (پروژه لینوکس) است — آن جدول صراحتاً
+    // 0x006B=KEY_YELLOW و 0x006C=KEY_BLUE تعریف می‌کند. حالا تصحیح شد.
+    'color_yellow': BtHidCommand(true, 0x006B), // KEY_YELLOW (hid-input.c)
+    'color_blue': BtHidCommand(true, 0x006C),   // KEY_BLUE   (hid-input.c)
     'epg': BtHidCommand(true, 0x008D), // Program Guide
     // «Zoom» دکمه‌ی تکی‌ست (نه Zoom In/Out جداگانه)، نزدیک‌ترین معادل واقعی
     // آن در جدول استاندارد Aspect Ratio (تعویض حالت نمایش/زوم) است.
@@ -86,6 +89,15 @@ class BtHidCommands {
     'num_9': BtHidCommand(false, 0x26),
   };
 
+    // ⚠️ رفع باگ «source در بلوتوث پشتیبانی نمی‌شود»: دکمه‌ی Source در هر دو
+    // کنترل (بزرگ و کوچک) نمایش داده می‌شد اما در حالت BT پیام خطا می‌داد.
+    // HID Consumer 0x0089 = «Media Select TV» — بر اساس جدول Linux hid-input.c
+    // این کد در Android TV به KEYCODE_TV_INPUT نگاشت می‌شود که روی تلویزیون
+    // اندروید معمولاً دیالوگ «انتخاب منبع ورودی» (HDMI1/HDMI2/...) را باز
+    // می‌کند. HID descriptor پروژه از Usage Maximum=0x03FF پشتیبانی می‌کند
+    // پس این کد در رنج مجاز است.
+    'source': BtHidCommand(true, 0x0089), // Media Select TV → KEYCODE_TV_INPUT
+
   // ⚠️ عمداً نگاشت نشده‌اند (چون کد استاندارد و تضمینی برای آن‌ها در جدول
   // رسمی HID/هسته لینوکس پیدا نشد — به‌جای حدس زدن، پیام صریح «پشتیبانی
   // نمی‌شود» نمایش داده می‌شود):
@@ -94,6 +106,4 @@ class BtHidCommands {
   //    هست که معادل دقیق رادیوی دوو نیست).
   //  • shift: در ریموت اصلی یک کلید ثانویه‌ی اعداد/نمادهاست، نه Shift
   //    کیبورد استاندارد — بدون کد ضبط‌شده‌ی واقعی نمی‌توان آن را حدس زد.
-  //  • source: هیچ کد Consumer استاندارد و به‌طور گسترده پشتیبانی‌شده برای
-  //    تعویض منبع ورودی روی Android TV وجود ندارد.
 }
