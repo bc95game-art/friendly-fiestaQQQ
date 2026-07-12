@@ -70,6 +70,10 @@ class BtHidCommands {
     'next': BtHidCommand(true, 0x00B5), // Scan Next Track
     'stop': BtHidCommand(true, 0x00B7), // Stop
     'record': BtHidCommand(true, 0x00B2), // Record
+    // پیدا شد در بازبینی نهایی: دکمه «Return» کی‌پد در حالت بلوتوث اصلاً
+    // نگاشت نداشت (فقط IR داشت) — با کد استاندارد کیبورد Enter (صفحه‌ی
+    // Keyboard/Keypad، Usage 0x28) اضافه شد.
+    'return': BtHidCommand(false, 0x28), // Keyboard Enter/Return
     'num_0': BtHidCommand(false, 0x27),
     'num_1': BtHidCommand(false, 0x1E),
     'num_2': BtHidCommand(false, 0x1F),
