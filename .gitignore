@@ -42,6 +42,7 @@ ios/Flutter/app.zip
 ios/Flutter/flutter_assets/
 ios/ServiceDefinitions.json
 ios/Runner/GeneratedPluginRegistrant.*
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 *.mode1v3
 *.mode2v3
 *.moved-aside

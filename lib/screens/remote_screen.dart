@@ -18,13 +18,19 @@ class RemoteScreen extends StatefulWidget {
   State<RemoteScreen> createState() => _RemoteScreenState();
 }
 
-class _RemoteScreenState extends State<RemoteScreen> {
+class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver {
   late final RemoteController _controller = RemoteController(widget.mode);
   BtConnState _btState = BtConnState.disconnected;
   StreamSubscription<BtConnState>? _btSub;
 
   // ── دیباونس: جلوگیری از ارسال چند فرمان همزمان هنگام ضربه‌های سریع ──
   DateTime? _lastPressTime;
+
+  // ── جلوگیری از اسپم پیام‌های خطا: هر خطای یکسان فقط یک بار به‌صورت
+  // دیالوگ (نه SnackBar تکرارشونده) نشان داده می‌شود.
+  String? _lastErrorShown;
+  DateTime? _lastErrorAt;
+  bool _errorDialogOpen = false;
 
   // ── تشخیص «نوسان اتصال»: وقتی وضعیت چند بار پشت‌سرهم بین در-حال-اتصال
   // و قطع‌شده نوسان می‌کند (یعنی تلویزیون اتصالی که گوشی شروع کرده را رد
@@ -37,6 +43,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   void initState() {
     super.initState();
     if (widget.mode.isBluetooth) {
+      WidgetsBinding.instance.addObserver(this);
       _btSub = BtHidService.instance.stateStream.listen((s) {
         if (!mounted) return;
         setState(() {
@@ -57,27 +64,61 @@ class _RemoteScreenState extends State<RemoteScreen> {
     }
   }
 
+  // ── اتصال خودکار بلوتوث ──────────────────────────────────────────────
+  // رفع باگ «اتصال خودکار»: قبلاً فقط وقتی دقیقاً یک دستگاه Pair‌شده وجود
+  // داشت خودکار وصل می‌شد، و هیچ تلاش مجددی بعد از برگشتن اپ از پس‌زمینه
+  // انجام نمی‌شد (کاربر مجبور بود اپ را کامل ببندد و باز کند). حالا:
+  //  ۱) آدرس آخرین دستگاهِ متصل‌شده ذخیره و همیشه ابتدا امتحان می‌شود.
+  //  ۲) در نبود آن، اگر فقط یک دستگاه Pair شده باشد همان انتخاب می‌شود.
+  //  ۳) در didChangeAppLifecycleState وقتی اپ به پیش‌زمینه برمی‌گردد و
+  //     دیگر متصل نیست، همین منطق دوباره اجرا می‌شود — بدون لمس دستی.
   Future<void> _initBluetooth() async {
     final supported = await BtHidService.instance.initialize();
     if (!mounted) return;
     if (!supported) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text(
-          'این گوشی از حالت کنترل بلوتوثی پشتیبانی نمی‌کند (نیاز به اندروید ۹ به بالا) — از حالت فرستنده IR استفاده کنید',
-        ),
-        duration: Duration(seconds: 5),
-      ));
+      _showErrorOnce(
+        BtHidService.instance.lastInitError ??
+            'این گوشی از حالت کنترل بلوتوثی پشتیبانی نمی‌کند',
+      );
       return;
     }
-    // اگر فقط یک دستگاه Pair شده وجود دارد، مستقیم به آن وصل شو
+    if (BtHidService.instance.isConnected) return;
+
     var devices = await BtHidService.instance.bondedDevices();
     if (devices.isEmpty && BtHidService.instance.lastCallWasPermissionDenied) {
       // رفع همان باگ «مجوز هنوز نرسیده» — یک تلاش خودکار مجدد بعد از کمی تاخیر
       await Future.delayed(const Duration(milliseconds: 400));
       devices = await BtHidService.instance.bondedDevices();
     }
-    if (devices.length == 1 && mounted) {
+    if (!mounted || devices.isEmpty) return;
+
+    final lastAddress = await BtHidService.instance.lastDeviceAddress();
+    BtBondedDevice? remembered;
+    if (lastAddress != null) {
+      for (final d in devices) {
+        if (d.address == lastAddress) {
+          remembered = d;
+          break;
+        }
+      }
+    }
+
+    if (remembered != null) {
+      await BtHidService.instance.connect(remembered.address);
+    } else if (devices.length == 1) {
       await BtHidService.instance.connect(devices.first.address);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // رفع باگ «باید کامل اپ را ری‌استارت کنم»: هر بار که اپ از پس‌زمینه
+    // برمی‌گردد، اگر هنوز به بلوتوث تلویزیون وصل نیستیم، دوباره تلاش
+    // برای ثبت و اتصال خودکار انجام می‌شود.
+    if (state == AppLifecycleState.resumed &&
+        widget.mode.isBluetooth &&
+        !BtHidService.instance.isConnected) {
+      _initBluetooth();
     }
   }
 
@@ -100,14 +141,11 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
     if (devices.isEmpty) {
       final permissionIssue = BtHidService.instance.lastCallWasPermissionDenied;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-          permissionIssue
-              ? 'مجوز بلوتوث هنوز فعال نشده — از تنظیمات گوشی ← اپ‌ها ← کنترل هوشمند دوو ← مجوزها، دسترسی «دستگاه‌های اطراف» را فعال کنید'
-              : 'هیچ دستگاهی پیدا نشد — اول باید بلوتوث تلویزیون را از «تنظیمات گوشی ← بلوتوث» Pair کنید',
-        ),
-        duration: const Duration(seconds: 6),
-      ));
+      _showErrorOnce(
+        permissionIssue
+            ? 'مجوز بلوتوث هنوز فعال نشده — از تنظیمات گوشی ← اپ‌ها ← کنترل هوشمند دوو ← مجوزها، دسترسی «دستگاه‌های اطراف» را فعال کنید'
+            : 'هیچ دستگاهی پیدا نشد — اول باید بلوتوث تلویزیون را از «تنظیمات گوشی ← بلوتوث» Pair کنید',
+      );
       return;
     }
 
@@ -146,8 +184,46 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
   @override
   void dispose() {
+    if (widget.mode.isBluetooth) {
+      WidgetsBinding.instance.removeObserver(this);
+    }
     _btSub?.cancel();
     super.dispose();
+  }
+
+  /// نمایش هر پیام خطای مشخص فقط یک‌بار (به‌صورت دیالوگ با دکمه‌ی «باشه»)
+  /// به‌جای اسپم SnackBar در هر فشار دکمه. رفع باگ «خطاها هی تکرار می‌شوند».
+  void _showErrorOnce(String message) {
+    if (!mounted) return;
+    final now = DateTime.now();
+    final sameRecentError = _lastErrorShown == message &&
+        _lastErrorAt != null &&
+        now.difference(_lastErrorAt!) < const Duration(seconds: 5);
+    if (_errorDialogOpen || sameRecentError) return;
+
+    _lastErrorShown = message;
+    _lastErrorAt = now;
+    _errorDialogOpen = true;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppColors.radiusMd),
+          side: const BorderSide(color: AppColors.line),
+        ),
+        title: const Text('خطا',
+            style: TextStyle(color: AppColors.text1, fontWeight: FontWeight.w700)),
+        content: Text(message, style: const TextStyle(color: AppColors.text2, height: 1.8)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('باشه',
+                style: TextStyle(color: AppColors.btAccent, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    ).then((_) => _errorDialogOpen = false);
   }
 
   /// روش جایگزین اتصال: گوشی را قابل‌مشاهده می‌کند و راهنمای وصل‌شدن از
@@ -160,19 +236,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
     final permitted =
         await PermissionsService.requestDiscoverabilityPermission();
     if (!permitted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('برای قابل‌مشاهده کردن گوشی، مجوز بلوتوث لازم است'),
-        ));
-      }
+      _showErrorOnce('برای قابل‌مشاهده کردن گوشی، مجوز بلوتوث لازم است');
       return;
     }
     final ok = await BtHidService.instance.requestDiscoverable();
     if (!mounted) return;
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('باز کردن حالت قابل‌مشاهده ناموفق بود'),
-      ));
+      _showErrorOnce('باز کردن حالت قابل‌مشاهده ناموفق بود');
       return;
     }
     final name = await BtHidService.instance.localDeviceName();
@@ -218,8 +288,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
 
     final result = await _controller.send(key);
     if (!result.success && result.message != null && mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(result.message!)));
+      _showErrorOnce(result.message!);
     }
   }
 

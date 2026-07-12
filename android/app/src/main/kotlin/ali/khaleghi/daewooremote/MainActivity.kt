@@ -183,7 +183,18 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, hidChannelName)
             .setMethodCallHandler { call, result ->
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-                    result.success(false)
+                    // ⚠️ رفع باگ: قبلاً همه‌ی متدها (نه فقط register) وقتی نسخه‌ی
+                    // اندروید قدیمی بود success(false) برمی‌گرداندند و سمت Dart
+                    // این را با هر «false» دیگری (مثل بلوتوث خاموش) یکسان می‌دید،
+                    // پس پیام غلط «نسخه اندروید شما پشتیبانی نمی‌شود» حتی برای
+                    // گوشی‌های جدید نشان داده می‌شد. حالا فقط وقتی که واقعاً
+                    // SDK پایین‌تر از ۲۸ است این کد خطای مشخص برگردانده می‌شود.
+                    if (call.method == "register") {
+                        result.error("sdk_unsupported",
+                            "این نسخه‌ی اندروید (کمتر از ۹) از حالت کنترل بلوتوثی پشتیبانی نمی‌کند", null)
+                    } else {
+                        result.success(false)
+                    }
                     return@setMethodCallHandler
                 }
                 when (call.method) {
@@ -259,8 +270,21 @@ class MainActivity : FlutterActivity() {
 
     private fun registerHid(result: MethodChannel.Result) {
         val adapter = adapter()
-        if (adapter == null || !adapter.isEnabled) {
-            result.success(false)
+        if (adapter == null) {
+            // ⚠️ رفع باگ: قبلاً این حالت هم success(false) برمی‌گرداند و با
+            // «نسخه اندروید قدیمی» اشتباه گرفته می‌شد. این گوشی اصلاً سخت‌افزار
+            // بلوتوث ندارد — نادر، ولی پیام باید دقیق باشد.
+            result.error("no_bluetooth_hardware", "این گوشی سخت‌افزار بلوتوث ندارد", null)
+            return
+        }
+        if (!adapter.isEnabled) {
+            // ⚠️ رفع باگ اصلی گزارش‌شده: علت واقعی پیام غلط «نسخه اندروید شما
+            // پشتیبانی نمی‌کند». وقتی بلوتوث گوشی خاموش است، این کد قبلاً
+            // success(false) برمی‌گرداند و سمت Dart آن را دقیقاً مثل «این
+            // گوشی هیچ‌وقت نمی‌تواند حالت بلوتوثی را اجرا کند» تفسیر می‌کرد —
+            // درحالی‌که مشکل فقط این بود که بلوتوث خاموش بود، نه نسخه‌ی
+            // اندروید. حالا این دو حالت را کاملاً جدا می‌کنیم.
+            result.error("bluetooth_disabled", "بلوتوث گوشی خاموش است — آن را روشن کنید", null)
             return
         }
         if (registered && hidDevice != null) {
@@ -313,7 +337,11 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 ) ?: false
-                result.success(ok)
+                if (ok) {
+                    result.success(true)
+                } else {
+                    result.error("register_failed", "ثبت پروفایل HID بلوتوث ناموفق بود", null)
+                }
             }
 
             override fun onServiceDisconnected(profile: Int) {

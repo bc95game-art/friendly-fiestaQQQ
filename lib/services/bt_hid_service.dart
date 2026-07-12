@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'bt_hid_commands.dart';
 
 /// وضعیت اتصال بلوتوث تلویزیون برای نمایش در UI.
@@ -37,6 +38,9 @@ class BtHidService {
   static const _channel = MethodChannel('daewoo/bt_hid');
   static const _events = EventChannel('daewoo/bt_hid/state');
 
+  // کلید ذخیره‌ی آدرس آخرین دستگاه متصل‌شده (برای اتصال خودکار بدون لمس دستی).
+  static const _lastDeviceKey = 'bt_last_device_address';
+
   final _stateController = StreamController<BtConnState>.broadcast();
   Stream<BtConnState> get stateStream => _stateController.stream;
 
@@ -45,6 +49,10 @@ class BtHidService {
   bool get isConnected => _state == BtConnState.connected;
 
   bool _listening = false;
+
+  /// آخرین دلیل مشخص (نه حدسی) شکست initialize()/register — برای نمایش
+  /// پیام درست به کاربر به‌جای پیام یکسان و گاهی غلط «نسخه اندروید».
+  String? lastInitError;
 
   void _emit(BtConnState s) {
     _state = s;
@@ -78,12 +86,35 @@ class BtHidService {
     _ensureListening();
     try {
       final ok = await _channel.invokeMethod<bool>('register') ?? false;
-      if (!ok) _emit(BtConnState.unsupported);
+      if (!ok) {
+        lastInitError = 'ثبت پروفایل HID بلوتوث ناموفق بود';
+        _emit(BtConnState.error);
+      }
       return ok;
-    } on PlatformException {
-      _emit(BtConnState.unsupported);
+    } on PlatformException catch (e) {
+      // ⚠️ رفع باگ: قبلاً هر شکستی (خاموش‌بودن بلوتوث، نبود سخت‌افزار، یا
+      // واقعاً نسخه‌ی قدیمی اندروید) با یک وضعیت یکسان (unsupported) و یک
+      // پیام ثابت و گاهی غلط («نسخه اندروید شما پشتیبانی نمی‌کند») نشان
+      // داده می‌شد. حالا کد خطای واقعی از سمت نیتیو خوانده می‌شود تا فقط
+      // در حالت واقعاً ناسازگار (sdk_unsupported / no_bluetooth_hardware)
+      // پیام «پشتیبانی نمی‌شود» نشان داده شود.
+      switch (e.code) {
+        case 'sdk_unsupported':
+        case 'no_bluetooth_hardware':
+          lastInitError = e.message;
+          _emit(BtConnState.unsupported);
+          break;
+        case 'bluetooth_disabled':
+          lastInitError = e.message ?? 'بلوتوث گوشی خاموش است — آن را روشن کنید';
+          _emit(BtConnState.error);
+          break;
+        default:
+          lastInitError = e.message ?? 'خطای نامشخص در راه‌اندازی بلوتوث';
+          _emit(BtConnState.error);
+      }
       return false;
     } on MissingPluginException {
+      lastInitError = 'این گوشی از حالت کنترل بلوتوثی پشتیبانی نمی‌کند';
       _emit(BtConnState.unsupported);
       return false;
     }
@@ -125,12 +156,37 @@ class BtHidService {
       final ok =
           await _channel.invokeMethod<bool>('connect', {'address': address}) ??
               false;
-      if (!ok) _emit(BtConnState.error);
+      if (!ok) {
+        _emit(BtConnState.error);
+      } else {
+        // برای اتصال خودکار در دفعات بعدی (رفع باگ «اتصال خودکار بلوتوث»)
+        await _rememberDevice(address);
+      }
       return ok;
     } on PlatformException catch (e) {
       if (e.code == 'permission_denied') lastCallWasPermissionDenied = true;
       _emit(BtConnState.error);
       return false;
+    }
+  }
+
+  Future<void> _rememberDevice(String address) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_lastDeviceKey, address);
+    } catch (_) {
+      // ذخیره‌سازی اختیاری است؛ شکست آن نباید باعث خرابی اتصال شود
+    }
+  }
+
+  /// آدرس آخرین دستگاهی که با موفقیت وصل شده — برای تلاش خودکار در شروع
+  /// اپ و بعد از بازگشت از پس‌زمینه، بدون نیاز به لمس دستی کاربر.
+  Future<String?> lastDeviceAddress() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_lastDeviceKey);
+    } catch (_) {
+      return null;
     }
   }
 
