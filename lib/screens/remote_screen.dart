@@ -806,11 +806,28 @@ class _SmallRemote extends StatefulWidget {
 }
 
 class _SmallRemoteState extends State<_SmallRemote> {
-  // ⚠️ رفع باگ «دکمه موس کار نمی‌کند اصلاً»: قبلاً این دکمه مستقیم یک
-  // کلیک موس ارسال می‌کرد (بدون ارتباط با تاچ‌پد پایین)، درحالی‌که طبق
-  // طرح رابط کاربری این دکمه باید حالت «فعال/غیرفعال» موس را کنترل کند.
-  // حالا این وضعیت اینجا نگه داشته می‌شود و به تاچ‌پد پاس داده می‌شود.
   bool _mouseActive = false;
+
+  /// ⚠️ رفع باگ «OK در حالت موس روی گزینه‌ی فوکوس D-pad کلیک می‌کند نه
+  /// روی جایی که موس است»:
+  ///
+  /// وقتی موس فعال است، دکمه OK باید یک کلیک چپ موس واقعی ارسال کند —
+  /// نه کد HID Consumer «Menu Pick» (0x0041) که سیستم آن را به عنوان
+  /// فشار کلید DPAD_CENTER تفسیر می‌کند و روی گزینه‌ی فوکوس D-pad عمل
+  /// می‌کند. کلیک چپ موس مستقل از فوکوس D-pad است و دقیقاً روی موقعیت
+  /// نشانگر کلیک می‌کند — همان رفتاری که کاربر انتظار دارد.
+  ///
+  /// سایر دکمه‌های NavPad (بالا/پایین/چپ/راست) همچنان به همان شکل
+  /// کار می‌کنند — می‌توان از آن‌ها برای ناوبری معمولی در کنار موس استفاده
+  /// کرد.
+  void _smartPress(String key) {
+    if (key == 'ok' && _mouseActive && BtHidService.instance.isConnected) {
+      // به‌جای Menu Pick، کلیک چپ موس واقعی ارسال کن
+      BtHidService.instance.sendMouseClick();
+      return;
+    }
+    widget.onPress(key);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -846,7 +863,9 @@ class _SmallRemoteState extends State<_SmallRemote> {
         const SizedBox(height: 16),
 
         // ── NavPad ───────────────────────────────────────────────────────
-        _NavPad(onPress: onPress),
+        // ⚠️ از _smartPress استفاده می‌کنیم تا OK در حالت موس فعال،
+        // به جای Menu Pick، کلیک چپ موس واقعی ارسال کند.
+        _NavPad(onPress: _smartPress),
         const SizedBox(height: 16),
 
         // ── Back / Home / Menu ───────────────────────────────────────────
