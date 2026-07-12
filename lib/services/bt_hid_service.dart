@@ -50,6 +50,12 @@ class BtHidService {
 
   bool _listening = false;
 
+  // ⚠️ رفع باگ «قطع تصادفی/تا ری‌استارت اپ وصل نمی‌شود»: قبلاً initialize()
+  // و connect() می‌توانستند هم‌زمان از چند مسیر (initState صفحه‌ی جدید +
+  // didChangeAppLifecycleState + تلاش خودکار) فراخوانی شوند و روی هم
+  // بیفتند. این پرچم فقط یک تلاش را در هر لحظه فعال نگه می‌دارد.
+  bool _busy = false;
+
   /// آخرین دلیل مشخص (نه حدسی) شکست initialize()/register — برای نمایش
   /// پیام درست به کاربر به‌جای پیام یکسان و گاهی غلط «نسخه اندروید».
   String? lastInitError;
@@ -83,6 +89,16 @@ class BtHidService {
   /// باید قبل از تلاش برای اتصال صدا زده شود. روی اندروید کمتر از ۹
   /// یا گوشی‌هایی بدون پشتیبانی از پروفایل HID Device، false برمی‌گرداند.
   Future<bool> initialize() async {
+    if (_busy) return isConnected;
+    _busy = true;
+    try {
+      return await _initializeInner();
+    } finally {
+      _busy = false;
+    }
+  }
+
+  Future<bool> _initializeInner() async {
     _ensureListening();
     try {
       final ok = await _channel.invokeMethod<bool>('register') ?? false;
@@ -150,6 +166,16 @@ class BtHidService {
   }
 
   Future<bool> connect(String address) async {
+    if (_busy) return false;
+    _busy = true;
+    try {
+      return await _connectInner(address);
+    } finally {
+      _busy = false;
+    }
+  }
+
+  Future<bool> _connectInner(String address) async {
     lastCallWasPermissionDenied = false;
     _emit(BtConnState.connecting);
     try {
@@ -250,6 +276,28 @@ class BtHidService {
       return false;
     } on MissingPluginException {
       return false;
+    }
+  }
+
+  /// ریست کامل ثبت پروفایل HID (باطل‌کردن ثبت قبلی + ثبت از صفر).
+  /// وقتی چند تلاش پیاپی اتصال شکست می‌خورد (نشانه‌ی گیر کردن اتصال قبلی
+  /// در وضعیت ناسالم)، این متد دقیقاً همان پاک‌سازی‌ای را انجام می‌دهد که
+  /// قبلاً فقط بستن و باز کردن کامل اپ انجام می‌داد — رفع باگ «تا ری‌استارت
+  /// اپ دوباره وصل نمی‌شود».
+  Future<bool> hardReset() async {
+    if (_busy) return false;
+    _busy = true;
+    try {
+      _ensureListening();
+      final ok = await _channel.invokeMethod<bool>('reset') ?? false;
+      if (!ok) _emit(BtConnState.error);
+      return ok;
+    } on PlatformException catch (e) {
+      lastInitError = e.message ?? 'خطای نامشخص در ریست بلوتوث';
+      _emit(BtConnState.error);
+      return false;
+    } finally {
+      _busy = false;
     }
   }
 

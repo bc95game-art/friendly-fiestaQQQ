@@ -2,21 +2,24 @@ import 'package:flutter/material.dart';
 import '../services/bt_hid_service.dart';
 import '../theme/colors.dart';
 
-/// تاچ‌پد موس واقعی.
+/// تاچ‌پد موس واقعی — ویجت «کنترل‌شده» (Controlled): فعال/غیرفعال بودنش را
+/// خودش تصمیم نمی‌گیرد، از دکمه‌ی مخصوص «موس» در کنترل کوچک می‌آید
+/// (`active`). این باعث می‌شود فقط یک نقطه‌ی روشن/خاموش‌کردن مشخص وجود
+/// داشته باشد — دقیقاً همان چیزی که طبق دکمه‌ی «فعال/غیرفعال کردن موس»
+/// در رابط کاربری انتظار می‌رود.
 ///
-/// ⚠️ رفتار قبلی (رفع‌شده): فقط تا زمانی‌که انگشت روی صفحه «نگه‌داشته»
-/// می‌شد موس فعال بود؛ همین باعث می‌شد وقتی کاربر همزمان انگشت دیگری را
-/// روی دکمه‌ی OK می‌گذاشت (برای مثال حین کشیدن نشانگر)، ارسال پیوسته‌ی
-/// گزارش‌های حرکت موس روی همان اتصال HID با ارسال دکمه‌ی OK رقابت می‌کرد
-/// و گاهی OK دیر یا اصلاً به تلویزیون نمی‌رسید.
+/// ⚠️ رفتار قبلی (رفع‌شده): چون فعال‌سازی از خودِ پد (نگه‌داشتن انگشت)
+/// می‌آمد، وقتی کاربر همزمان انگشت دیگری روی OK می‌گذاشت، ارسال پیوسته‌ی
+/// گزارش‌های حرکت موس با ارسال دکمه‌ی OK رقابت می‌کرد. حالا فعال‌سازی
+/// فقط از دکمه‌ی «موس» (بیرون از پد) می‌آید، پس نیازی به لمس هم‌زمان پد
+/// نیست.
 ///
-/// رفتار جدید: یک ضربه‌ی ساده حالت تاچ‌پد را «فعال»/«غیرفعال» می‌کند
-/// (Toggle) — دیگر نیازی به نگه‌داشتن انگشت نیست. کاربر یک بار لمس می‌کند،
-/// نشانگر را با کشیدن انگشت حرکت می‌دهد، و با یک ضربه‌ی دیگر آن را
-/// غیرفعال می‌کند تا بدون تداخل سراغ بقیه‌ی دکمه‌ها (مثل OK) برود. کلیک
-/// موس همچنان از دکمه‌ی مجزای 🖱 در کنترل کوچک ارسال می‌شود.
+/// وقتی فعال است: کشیدن انگشت = حرکت نشانگر (با ضریب حساسیت بیشتر)،
+/// و یک ضربه‌ی ساده (بدون حرکت) = کلیک موس روی همان نقطه‌ای که نشانگر
+/// تلویزیون الان هست.
 class Touchpad extends StatefulWidget {
-  const Touchpad({super.key, this.locked = false});
+  const Touchpad({super.key, required this.active, this.locked = false});
+  final bool active;
   final bool locked;
 
   @override
@@ -30,23 +33,16 @@ class _TouchpadState extends State<Touchpad> {
   static const double _sensitivity = 2.4;
 
   Offset? _glowPos;
-  bool _active = false;
 
   // باقیمانده‌ی اعشاری حرکت (تا با گرد کردن هر رویداد، دقت در سرعت‌های
   // کم از دست نرود)
   double _dxRemainder = 0;
   double _dyRemainder = 0;
 
-  void _toggleActive() {
-    if (widget.locked) return;
-    setState(() {
-      _active = !_active;
-      if (!_active) _glowPos = null;
-    });
-  }
+  bool get _enabled => widget.active && !widget.locked;
 
   void _onUpdate(DragUpdateDetails d) {
-    if (widget.locked || !_active) return;
+    if (!_enabled) return;
     setState(() => _glowPos = d.localPosition);
 
     _dxRemainder += d.delta.dx * _sensitivity;
@@ -60,17 +56,23 @@ class _TouchpadState extends State<Touchpad> {
     }
   }
 
+  void _onTap() {
+    if (!_enabled) return;
+    BtHidService.instance.sendMouseClick();
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: _toggleActive,
+      onTap: _onTap,
       onPanUpdate: _onUpdate,
+      onPanEnd: (_) => setState(() => _glowPos = null),
       child: Container(
         height: 160,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(22),
           border: Border.all(
-            color: _active ? AppColors.btAccent : AppColors.line,
+            color: widget.active ? AppColors.btAccent : AppColors.line,
             width: 1.5,
           ),
           gradient: const LinearGradient(
@@ -99,38 +101,22 @@ class _TouchpadState extends State<Touchpad> {
                     ),
                   ),
                 ),
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: (_active ? AppColors.btAccent : Colors.black).withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  child: Text(
-                    widget.locked ? 'غیرفعال' : (_active ? 'فعال' : 'خاموش'),
-                    style: const TextStyle(fontSize: 11, color: AppColors.text1),
-                  ),
-                ),
-              ),
-              if (!_active)
+              if (!widget.active)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
                   child: Text(
                     widget.locked
                         ? 'در حالت فرستنده، موس لمسی غیرفعال است'
-                        : 'برای فعال‌کردن نشانگر، یک بار ضربه بزنید',
+                        : 'برای فعال‌کردن، دکمه‌ی موس بالا را بزنید',
                     textAlign: TextAlign.center,
                     style: const TextStyle(fontSize: 12, color: AppColors.text3, height: 1.8),
                   ),
                 ),
-              if (_active)
+              if (widget.active)
                 const Positioned(
                   bottom: 10,
                   child: Text(
-                    'برای غیرفعال‌کردن دوباره ضربه بزنید',
+                    'کشیدن = حرکت نشانگر · ضربه‌ی ساده = کلیک',
                     style: TextStyle(fontSize: 11, color: AppColors.text3),
                   ),
                 ),

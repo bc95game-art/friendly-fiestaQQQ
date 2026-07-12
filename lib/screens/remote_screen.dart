@@ -20,8 +20,20 @@ class RemoteScreen extends StatefulWidget {
 
 class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver {
   late final RemoteController _controller = RemoteController(widget.mode);
-  BtConnState _btState = BtConnState.disconnected;
+  // ⚠️ رفع باگ: قبلاً همیشه از «قطع» شروع می‌شد حتی اگر اتصال بلوتوث از
+  // قبل (مثلاً از صفحه‌ی قبلی) واقعاً برقرار بود — وضعیت واقعی سرویس را
+  // همان لحظه می‌خوانیم تا نمایش با واقعیت هم‌خوان باشد.
+  BtConnState _btState = BtHidService.instance.state;
   StreamSubscription<BtConnState>? _btSub;
+
+  // ── تلاش خودکار مجدد وقتی اتصال بدون اقدام کاربر قطع می‌شود ──────────
+  // رفع باگ «قطع تصادفی/نیاز به ری‌استارت اپ»: به‌جای منتظر ماندن برای
+  // برگشت اپ از پس‌زمینه یا لمس دستی، با کمی تاخیر (و افزایش تدریجی تاخیر)
+  // خودش دوباره تلاش می‌کند؛ بعد از چند شکست پیاپی، یک ریست کامل ثبت HID
+  // امتحان می‌شود (دقیقاً کاری که قبلاً فقط ری‌استارت اپ انجام می‌داد).
+  Timer? _retryTimer;
+  int _reconnectAttempts = 0;
+  static const _maxAutoRetries = 5;
 
   // ── دیباونس: جلوگیری از ارسال چند فرمان همزمان هنگام ضربه‌های سریع ──
   DateTime? _lastPressTime;
@@ -46,12 +58,14 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       WidgetsBinding.instance.addObserver(this);
       _btSub = BtHidService.instance.stateStream.listen((s) {
         if (!mounted) return;
+        final wasConnected = _btState == BtConnState.connected;
         setState(() {
           if (s == BtConnState.connecting) {
             _connectingBounces++;
           } else if (s == BtConnState.connected) {
             _connectingBounces = 0;
             _showAlternativeHint = false;
+            _reconnectAttempts = 0;
           }
           if (_connectingBounces >= 3 &&
               (s == BtConnState.disconnected || s == BtConnState.error)) {
@@ -59,6 +73,12 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           }
           _btState = s;
         });
+        // اتصال بدون دخالت کاربر قطع شد (نه اینکه کاربر خودش وصل نبود) —
+        // خودکار برای وصل‌شدن دوباره تلاش کن.
+        if (wasConnected &&
+            (s == BtConnState.disconnected || s == BtConnState.error)) {
+          _scheduleAutoReconnect();
+        }
       });
       _initBluetooth();
     }
@@ -108,6 +128,23 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     } else if (devices.length == 1) {
       await BtHidService.instance.connect(devices.first.address);
     }
+  }
+
+  void _scheduleAutoReconnect() {
+    _retryTimer?.cancel();
+    if (_reconnectAttempts >= _maxAutoRetries) return;
+    _reconnectAttempts++;
+    final delaySeconds = _reconnectAttempts.clamp(1, 4); // 1,2,3,4,4 ثانیه
+    _retryTimer = Timer(Duration(seconds: delaySeconds), () async {
+      if (!mounted || BtHidService.instance.isConnected) return;
+      if (_reconnectAttempts >= 3) {
+        // چند تلاش ساده شکست خورده — ثبت HID را کامل ریست کن (رفع باگ
+        // «تا ری‌استارت اپ وصل نمی‌شود») و سپس دوباره تلاش برای اتصال.
+        await BtHidService.instance.hardReset();
+        if (!mounted) return;
+      }
+      await _initBluetooth();
+    });
   }
 
   @override
@@ -187,6 +224,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     if (widget.mode.isBluetooth) {
       WidgetsBinding.instance.removeObserver(this);
     }
+    _retryTimer?.cancel();
     _btSub?.cancel();
     super.dispose();
   }
@@ -737,7 +775,7 @@ class _LargeRemote extends StatelessWidget {
 // ════════════════════════════════════════════════════════════════════════
 //  کنترل کوچک
 // ════════════════════════════════════════════════════════════════════════
-class _SmallRemote extends StatelessWidget {
+class _SmallRemote extends StatefulWidget {
   const _SmallRemote(
       {required this.accent, required this.mode, required this.onPress});
   final Color accent;
@@ -745,7 +783,21 @@ class _SmallRemote extends StatelessWidget {
   final void Function(String) onPress;
 
   @override
+  State<_SmallRemote> createState() => _SmallRemoteState();
+}
+
+class _SmallRemoteState extends State<_SmallRemote> {
+  // ⚠️ رفع باگ «دکمه موس کار نمی‌کند اصلاً»: قبلاً این دکمه مستقیم یک
+  // کلیک موس ارسال می‌کرد (بدون ارتباط با تاچ‌پد پایین)، درحالی‌که طبق
+  // طرح رابط کاربری این دکمه باید حالت «فعال/غیرفعال» موس را کنترل کند.
+  // حالا این وضعیت اینجا نگه داشته می‌شود و به تاچ‌پد پاس داده می‌شود.
+  bool _mouseActive = false;
+
+  @override
   Widget build(BuildContext context) {
+    final accent = widget.accent;
+    final mode = widget.mode;
+    final onPress = widget.onPress;
     final locked = !mode.supportsTouchpad;
     return ListView(
       children: [
@@ -841,8 +893,10 @@ class _SmallRemote extends StatelessWidget {
             Expanded(
               child: RemoteButton(
                 disabled: locked,
-                accent: accent.withOpacity(0.15),
-                onTap: () => BtHidService.instance.sendMouseClick(),
+                accent: _mouseActive
+                    ? accent.withOpacity(0.55)
+                    : accent.withOpacity(0.15),
+                onTap: () => setState(() => _mouseActive = !_mouseActive),
                 child: const Icon(Icons.mouse_rounded),
               ),
             ),
@@ -887,7 +941,7 @@ class _SmallRemote extends StatelessWidget {
         const SizedBox(height: 16),
 
         // ── تاچ‌پد موس (فقط بلوتوث — با پروفایل HID موس واقعی) ───────────
-        Touchpad(locked: locked),
+        Touchpad(active: _mouseActive, locked: locked),
         const SizedBox(height: 16),
       ],
     );

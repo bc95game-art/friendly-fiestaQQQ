@@ -48,6 +48,15 @@ class MainActivity : FlutterActivity() {
     private var registered = false
     private var hidEventSink: EventChannel.EventSink? = null
 
+    // ⚠️ رفع باگ «اتصال بعد از رفتن و برگشت به صفحه/بعد از قطع، تا ری‌استارت
+    // کامل اپ برقرار نمی‌شود»: قبلاً هر بار Dart سمت initState دوباره
+    // getProfileProxy را صدا می‌زد در حالی که ممکن بود یک ثبت قبلی هنوز
+    // «در حال انجام» باشد — این باعث پروکسی‌های موازی/ناسازگار می‌شد که
+    // اندروید بعد از آن دیگر اتصال HID را قبول نمی‌کرد مگر با ری‌استارت
+    // کامل پروسه (که hidDevice/registered را از صفر می‌ساخت). این پرچم
+    // از هم‌پوشانی درخواست‌های ثبت جلوگیری می‌کند.
+    private var registering = false
+
     companion object {
         private const val REPORT_ID_KEYBOARD: Byte = 1
         private const val REPORT_ID_CONSUMER: Byte = 2
@@ -221,6 +230,7 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                     "requestDiscoverable" -> requestDiscoverable(result)
+                    "reset" -> hardReset(result)
                     "localName" -> result.success(adapter()?.name)
                     "sendConsumer" -> {
                         val usage = call.argument<Int>("usage") ?: 0
@@ -291,6 +301,13 @@ class MainActivity : FlutterActivity() {
             result.success(true)
             return
         }
+        if (registering) {
+            // یک ثبت قبلاً در حال انجام است — دوباره getProfileProxy صدا
+            // نمی‌زنیم (رفع باگ پروکسی‌های موازی)
+            result.success(true)
+            return
+        }
+        registering = true
 
         val sdp = BluetoothHidDeviceAppSdpSettings(
             "کنترل هوشمند دوو",
@@ -337,6 +354,7 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 ) ?: false
+                registering = false
                 if (ok) {
                     result.success(true)
                 } else {
@@ -345,6 +363,7 @@ class MainActivity : FlutterActivity() {
             }
 
             override fun onServiceDisconnected(profile: Int) {
+                registering = false
                 registered = false
                 hidDevice = null
                 connectedDevice = null
@@ -395,6 +414,14 @@ class MainActivity : FlutterActivity() {
             result.success(false)
             return
         }
+        // ⚠️ رفع باگ: قبلاً اگر یک اتصال قبلی (به همین دستگاه یا دستگاه دیگر)
+        // هنوز به‌عنوان connectedDevice ثبت بود، connect() جدید را مستقیم روی
+        // آن صدا می‌زدیم — استک بلوتوث اندروید روی برخی گوشی‌ها این
+        // درخواست هم‌پوشان را رد می‌کند و دیگر تا ثبت مجدد کامل (ری‌استارت
+        // اپ) اتصال برقرار نمی‌شود. حالا همیشه اول قطع می‌کنیم.
+        if (connectedDevice != null) {
+            disconnectCurrent()
+        }
         try {
             result.success(hid.connect(device))
         } catch (e: SecurityException) {
@@ -410,6 +437,27 @@ class MainActivity : FlutterActivity() {
             // نادیده گرفته می‌شود
         }
         connectedDevice = null
+    }
+
+    /// ریست کامل پروفایل HID: وقتی اتصال چند بار پشت‌سرهم شکست می‌خورد
+    /// (نشانه‌ی گیر کردن پروکسی/ثبت قبلی در یک حالت ناسالم)، این متد
+    /// ثبت قبلی را کامل باطل و از صفر دوباره ثبت می‌کند — دقیقاً همان کاری
+    /// که قبلاً فقط بستن و باز کردن کامل اپ انجام می‌داد.
+    private fun hardReset(result: MethodChannel.Result) {
+        try {
+            val device = connectedDevice
+            if (device != null) {
+                try { hidDevice?.disconnect(device) } catch (e: SecurityException) {}
+            }
+            try { hidDevice?.unregisterApp() } catch (e: SecurityException) {}
+        } catch (e: Exception) {
+            // نادیده گرفته می‌شود — هدف فقط پاک‌سازی وضعیت است
+        }
+        registered = false
+        registering = false
+        hidDevice = null
+        connectedDevice = null
+        registerHid(result)
     }
 
     private fun sendConsumerUsage(usage: Int): Boolean {
