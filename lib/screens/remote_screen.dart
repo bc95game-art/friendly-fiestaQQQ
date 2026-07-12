@@ -58,7 +58,6 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       WidgetsBinding.instance.addObserver(this);
       _btSub = BtHidService.instance.stateStream.listen((s) {
         if (!mounted) return;
-        final wasConnected = _btState == BtConnState.connected;
         setState(() {
           if (s == BtConnState.connecting) {
             _connectingBounces++;
@@ -73,10 +72,13 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
           }
           _btState = s;
         });
-        // اتصال بدون دخالت کاربر قطع شد (نه اینکه کاربر خودش وصل نبود) —
-        // خودکار برای وصل‌شدن دوباره تلاش کن.
-        if (wasConnected &&
-            (s == BtConnState.disconnected || s == BtConnState.error)) {
+        // ⚠️ رفع باگ «بعد از Back و ورود مجدد، اتصال برقرار نمی‌شود»:
+        // قبلاً فقط وقتی قبلاً متصل بودیم (wasConnected=true) و قطع شد،
+        // تلاش خودکار مجدد انجام می‌شد. اگر صفحه تازه باز شده بود و
+        // اتصال اولیه شکست می‌خورد (wasConnected=false)، هیچ تلاش مجددی
+        // انجام نمی‌شد و کاربر گیر می‌کرد. حالا در هر قطع/خطا، تلاش
+        // مجدد برنامه‌ریزی می‌شود.
+        if (s == BtConnState.disconnected || s == BtConnState.error) {
           _scheduleAutoReconnect();
         }
       });
@@ -123,10 +125,22 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
       }
     }
 
-    if (remembered != null) {
-      await BtHidService.instance.connect(remembered.address);
-    } else if (devices.length == 1) {
-      await BtHidService.instance.connect(devices.first.address);
+    final targetAddress = remembered?.address ??
+        (devices.length == 1 ? devices.first.address : null);
+    if (targetAddress == null) return;
+
+    final ok = await BtHidService.instance.connect(targetAddress);
+    if (!mounted) return;
+
+    // ⚠️ رفع باگ «وقتی Back می‌زنم و دوباره وارد می‌شوم، اتصال برقرار
+    // نمی‌شود»: اگر connect() مستقیماً false برگرداند (نه اینکه TV رد کند،
+    // بلکه پروفایل HID گوشی در وضعیت ناسالم باشد)، ثبت HID را کامل ریست
+    // می‌کنیم و یک بار دیگر تلاش می‌کنیم — دقیقاً کاری که قبلاً فقط
+    // ری‌استارت کامل اپ انجام می‌داد.
+    if (!ok && !BtHidService.instance.isConnected) {
+      await BtHidService.instance.hardReset();
+      if (!mounted) return;
+      await BtHidService.instance.connect(targetAddress);
     }
   }
 
@@ -134,12 +148,17 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     _retryTimer?.cancel();
     if (_reconnectAttempts >= _maxAutoRetries) return;
     _reconnectAttempts++;
-    final delaySeconds = _reconnectAttempts.clamp(1, 4); // 1,2,3,4,4 ثانیه
-    _retryTimer = Timer(Duration(seconds: delaySeconds), () async {
+    // تاخیر کمتر در اولین تلاش (0.8 ثانیه) تا کاربر سریع‌تر وصل شود؛
+    // بعد از آن با افزایش تدریجی: 0.8، 1.5، 2، 3، 3 ثانیه.
+    final delays = [800, 1500, 2000, 3000, 3000];
+    final delayMs = delays[(_reconnectAttempts - 1).clamp(0, delays.length - 1)];
+    _retryTimer = Timer(Duration(milliseconds: delayMs), () async {
       if (!mounted || BtHidService.instance.isConnected) return;
-      if (_reconnectAttempts >= 3) {
-        // چند تلاش ساده شکست خورده — ثبت HID را کامل ریست کن (رفع باگ
-        // «تا ری‌استارت اپ وصل نمی‌شود») و سپس دوباره تلاش برای اتصال.
+      // ⚠️ رفع باگ «تا ری‌استارت اپ وصل نمی‌شود»: از تلاش دوم به بعد
+      // ثبت HID کامل ریست می‌شود — نه فقط از تلاش سوم — چون وقتی
+      // Back+Enter باعث گیر کردن پروکسی HID می‌شود، یک تلاش ساده کافی
+      // نیست و ریست زودتر لازم است.
+      if (_reconnectAttempts >= 2) {
         await BtHidService.instance.hardReset();
         if (!mounted) return;
       }
@@ -896,7 +915,22 @@ class _SmallRemoteState extends State<_SmallRemote> {
                 accent: _mouseActive
                     ? accent.withOpacity(0.55)
                     : accent.withOpacity(0.15),
-                onTap: () => setState(() => _mouseActive = !_mouseActive),
+                onTap: () {
+                  setState(() => _mouseActive = !_mouseActive);
+                  // ⚠️ رفع باگ «دکمه موس کار نمی‌کند»: وقتی بلوتوث وصل
+                  // نیست، کاربر موس را فعال می‌کرد ولی هیچ اتفاقی نمی‌افتاد
+                  // و فکر می‌کرد دکمه خراب است. حالا پیام واضح داده می‌شود.
+                  if (!BtHidService.instance.isConnected && !locked) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'ابتدا به بلوتوث تلویزیون متصل شوید تا موس کار کند',
+                        ),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
                 child: const Icon(Icons.mouse_rounded),
               ),
             ),

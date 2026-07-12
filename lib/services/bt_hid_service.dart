@@ -89,7 +89,10 @@ class BtHidService {
   /// باید قبل از تلاش برای اتصال صدا زده شود. روی اندروید کمتر از ۹
   /// یا گوشی‌هایی بدون پشتیبانی از پروفایل HID Device، false برمی‌گرداند.
   Future<bool> initialize() async {
-    if (_busy) return isConnected;
+    // ⚠️ رفع باگ: قبلاً وقتی _busy=true بود، isConnected برمی‌گشت که ممکن
+    // بود false باشد و سمت Dart آن را «ناپشتیبانی» تفسیر کند. حالا true
+    // برمی‌گردد تا caller بداند "در حال انجام است، خطایی نیست".
+    if (_busy) return true;
     _busy = true;
     try {
       return await _initializeInner();
