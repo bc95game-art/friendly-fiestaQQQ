@@ -87,23 +87,17 @@ class BtHidCommands {
     'num_7': BtHidCommand(false, 0x24),
     'num_8': BtHidCommand(false, 0x25),
     'num_9': BtHidCommand(false, 0x26),
+    // ⚠️ رفع باگ «source خارج از map»: در کامیت قبلی source اشتباهاً بعد از
+    // بسته‌شدن آکولاد map گذاشته شد (compile error). حالا در جای درست است.
+    // HID Consumer 0x0089 = «Media Select TV» → KEYCODE_TV_INPUT در Android TV
+    // که دیالوگ «انتخاب منبع ورودی» (HDMI1/HDMI2/...) را باز می‌کند.
+    'source': BtHidCommand(true, 0x0089),
   };
 
-    // ⚠️ رفع باگ «source در بلوتوث پشتیبانی نمی‌شود»: دکمه‌ی Source در هر دو
-    // کنترل (بزرگ و کوچک) نمایش داده می‌شد اما در حالت BT پیام خطا می‌داد.
-    // HID Consumer 0x0089 = «Media Select TV» — بر اساس جدول Linux hid-input.c
-    // این کد در Android TV به KEYCODE_TV_INPUT نگاشت می‌شود که روی تلویزیون
-    // اندروید معمولاً دیالوگ «انتخاب منبع ورودی» (HDMI1/HDMI2/...) را باز
-    // می‌کند. HID descriptor پروژه از Usage Maximum=0x03FF پشتیبانی می‌کند
-    // پس این کد در رنج مجاز است.
-    'source': BtHidCommand(true, 0x0089), // Media Select TV → KEYCODE_TV_INPUT
-
-  // ⚠️ عمداً نگاشت نشده‌اند (چون کد استاندارد و تضمینی برای آن‌ها در جدول
-  // رسمی HID/هسته لینوکس پیدا نشد — به‌جای حدس زدن، پیام صریح «پشتیبانی
-  // نمی‌شود» نمایش داده می‌شود):
-  //  • text (تلتکست): هیچ کد استاندارد Consumer برای Teletext وجود ندارد.
-  //  • radio: کد اختصاصی «رادیو» در جدول استاندارد نیست (فقط Tuner/TV عمومی
-  //    هست که معادل دقیق رادیوی دوو نیست).
-  //  • shift: در ریموت اصلی یک کلید ثانویه‌ی اعداد/نمادهاست، نه Shift
-  //    کیبورد استاندارد — بدون کد ضبط‌شده‌ی واقعی نمی‌توان آن را حدس زد.
+  /// دکمه‌هایی که در حالت BT فیزیکاً غیرممکن هستند — فقط از طریق IR
+  /// به سخت‌افزار TV دسترسی دارند و Android TV آنها را از BT HID نمی‌پذیرد.
+  /// در Android Generic.kl این کدها (#key 385 KEY_RADIO / #key 388 KEY_TEXT)
+  /// comment‌شده‌اند یعنی هیچ HID Consumer code‌ای به آنها نگاشت نمی‌شود.
+  /// UI در حالت BT این دکمه‌ها را با برچسب «فقط IR» غیرفعال نشان می‌دهد.
+  static const Set<String> irOnlyKeys = {'text', 'radio', 'shift'};
 }
