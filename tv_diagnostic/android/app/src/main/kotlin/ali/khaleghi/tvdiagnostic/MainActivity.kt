@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.view.InputDevice
 import android.view.KeyEvent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -17,27 +18,32 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * پل بین Dart و دو منبع واقعی اطلاعات سخت‌افزاری تلویزیون:
+ * نسخه ارتقاء‌یافته — هدف: کشیدن نگاشت واقعی HID از تلویزیون.
  *
- * ۱) "daewoo_tv_diag/keys" — هر KeyEvent واقعی که اندروید به این اکتیویتی
- *    می‌دهد (چه از گیرنده‌ی مادون‌قرمز خودِ تلویزیون بیاید، چه از یک
- *    ریموت/گوشیِ متصل با HID بلوتوثی) — دقیقاً همانی که خودِ سیستم‌عامل
- *    دریافت کرده، بدون هیچ حدس یا واسطه.
- *
- * ۲) "daewoo_tv_diag/bt" — رویدادهای اتصال/جفت‌شدن بلوتوث در سطح سیستم
- *    (ACL_CONNECTED / ACL_DISCONNECTED / BOND_STATE_CHANGED) — تا معلوم شود
- *    آیا اتصال اصلاً در لایه‌ی اندروید برقرار می‌شود یا نه، مستقل از چیزی
- *    که اپ گوشی ادعا می‌کند.
+ * هر KeyEvent را به‌صورت JSON ساختار‌یافته می‌فرستد تا Dart بتواند آن را
+ * parse کرده و جدول نگاشت زنده بسازد:
+ *   keyCode   → کد اندروید (مثلاً ۲۶۴ = KEYCODE_VOLUME_UP)
+ *   keyName   → اسم رسمی اندروید (مثلاً "KEYCODE_VOLUME_UP")
+ *   scanCode  → کد خام لینوکس/HID که از دستگاه ورودی آمده
+ *   source    → منبع: SOURCE_KEYBOARD, SOURCE_GAMEPAD, ...
+ *   deviceId  → شناسه InputDevice در اندروید
+ *   deviceName→ اسم دستگاه ورودی (مثلاً "SM-G991B Keyboard")
+ *   action    → "DOWN" یا "UP"
+ *   repeat    → تعداد تکرار (۰ = اولین فشار)
+ *   time      → ساعت:دقیقه:ثانیه.میلی‌ثانیه
  */
 class MainActivity : FlutterActivity() {
+
     private val keyChannelName = "daewoo_tv_diag/keys"
-    private val btChannelName = "daewoo_tv_diag/bt"
+    private val btChannelName  = "daewoo_tv_diag/bt"
 
     private var keySink: EventChannel.EventSink? = null
-    private var btSink: EventChannel.EventSink? = null
+    private var btSink:  EventChannel.EventSink? = null
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val timeFmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
+    // ── گیرنده رویداد بلوتوث ──────────────────────────────────────────────
     private val btReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val device: BluetoothDevice? =
@@ -46,27 +52,30 @@ class MainActivity : FlutterActivity() {
                 else
                     @Suppress("DEPRECATION") intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
 
-            val name = try { device?.name ?: device?.address ?: "?" } catch (e: SecurityException) { "?" }
+            val name = try { device?.name ?: device?.address ?: "?" }
+                       catch (e: SecurityException) { device?.address ?: "?" }
 
             val msg = when (intent.action) {
-                BluetoothDevice.ACTION_ACL_CONNECTED -> "🔗 ACL_CONNECTED از $name"
-                BluetoothDevice.ACTION_ACL_DISCONNECTED -> "❌ ACL_DISCONNECTED از $name"
+                BluetoothDevice.ACTION_ACL_CONNECTED    -> "CONNECTED|$name"
+                BluetoothDevice.ACTION_ACL_DISCONNECTED -> "DISCONNECTED|$name"
                 BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
                     val state = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1)
                     val stateName = when (state) {
-                        BluetoothDevice.BOND_BONDED -> "BONDED (جفت‌شده)"
-                        BluetoothDevice.BOND_BONDING -> "BONDING (در حال جفت‌شدن)"
-                        BluetoothDevice.BOND_NONE -> "BOND_NONE (جفت نیست)"
-                        else -> "نامشخص($state)"
+                        BluetoothDevice.BOND_BONDED  -> "BONDED"
+                        BluetoothDevice.BOND_BONDING -> "BONDING"
+                        BluetoothDevice.BOND_NONE    -> "NONE"
+                        else -> "UNKNOWN($state)"
                     }
-                    "🔄 BOND_STATE_CHANGED با $name → $stateName"
+                    "BOND|$name|$stateName"
                 }
                 else -> return
             }
-            emit(btSink, "[${timeFmt.format(Date())}] $msg")
+            val time = timeFmt.format(Date())
+            emit(btSink, "$time|$msg")
         }
     }
 
+    // ── راه‌اندازی کانال‌ها ────────────────────────────────────────────────
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -96,29 +105,49 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        try { unregisterReceiver(btReceiver) } catch (e: IllegalArgumentException) { /* ثبت نشده بود */ }
+        try { unregisterReceiver(btReceiver) } catch (_: IllegalArgumentException) {}
         super.onDestroy()
+    }
+
+    // ── ضبط هر KeyEvent واقعی ────────────────────────────────────────────
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val action = when (event.action) {
+            KeyEvent.ACTION_DOWN -> "DOWN"
+            KeyEvent.ACTION_UP   -> "UP"
+            else -> "OTHER"
+        }
+
+        val keyCode  = event.keyCode
+        val keyName  = KeyEvent.keyCodeToString(keyCode)
+        val scanCode = event.scanCode
+        val source   = event.source
+        val repeat   = event.repeatCount
+        val deviceId = event.deviceId
+
+        // نام و نوع دستگاه ورودی
+        val inputDev  = event.device
+        val devName   = inputDev?.name?.replace("|", "/") ?: "?"
+
+        // تشخیص نوع منبع
+        val srcParts = mutableListOf<String>()
+        if (source and InputDevice.SOURCE_KEYBOARD  != 0) srcParts.add("KB")
+        if (source and InputDevice.SOURCE_GAMEPAD   != 0) srcParts.add("GP")
+        if (source and InputDevice.SOURCE_DPAD      != 0) srcParts.add("DP")
+        if (source and InputDevice.SOURCE_JOYSTICK  != 0) srcParts.add("JOY")
+        if (source and InputDevice.SOURCE_HDMI      != 0) srcParts.add("HDMI")
+        val srcStr = if (srcParts.isEmpty()) "0x${Integer.toHexString(source)}" else srcParts.joinToString("+")
+
+        val time = timeFmt.format(Date())
+
+        // فرمت pipe-separated — سبک، بدون نیاز به JSON parser در Dart
+        // time|action|keyCode|keyName|scanCode|source|deviceId|deviceName|repeat
+        val msg = "$time|$action|$keyCode|$keyName|$scanCode|$srcStr|$deviceId|$devName|$repeat"
+        emit(keySink, msg)
+
+        return super.dispatchKeyEvent(event)
     }
 
     private fun emit(sink: EventChannel.EventSink?, msg: String) {
         mainHandler.post { sink?.success(msg) }
-    }
-
-    // ⚠️ نکته‌ی اصلی: این متد، تنها منبع «حقیقتِ» واقعی است — هر کلیدی که
-    // اینجا نرسد یعنی اصلاً به لایه‌ی اندروید هم نرسیده (نه فقط این اپ).
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        val actionName = when (event.action) {
-            KeyEvent.ACTION_DOWN -> "DOWN"
-            KeyEvent.ACTION_UP -> "UP"
-            else -> "?"
-        }
-        val keyName = KeyEvent.keyCodeToString(event.keyCode)
-        val src = event.source
-        emit(
-            keySink,
-            "[${timeFmt.format(Date())}] $actionName  keyCode=${event.keyCode} ($keyName)  " +
-                "scanCode=${event.scanCode}  source=0x${Integer.toHexString(src)}  repeat=${event.repeatCount}",
-        )
-        return super.dispatchKeyEvent(event)
     }
 }
