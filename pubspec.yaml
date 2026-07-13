@@ -1,7 +1,7 @@
 name: daewoo_remote_pro
 description: "کنترل هوشمند دوو - مدل ۱۳۶۳ (نسخه رایگان، بدون تبلیغات)"
 publish_to: 'none'
-version: 2.1.0+2
+version: 2.2.0+3
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

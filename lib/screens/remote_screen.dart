@@ -106,6 +106,12 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     }
     if (BtHidService.instance.isConnected) return;
 
+    // رفع باگ «بلوتوث وصل نمی‌شود»: ثبت پروفایل HID روی برخی گوشی‌ها تا 300ms
+    // طول می‌کشد تا سیستم‌عامل تأییدیه آن را برگرداند. اگر connect() قبل از
+    // تأیید ثبت فراخوانی شود، تلویزیون اتصال را رد می‌کند.
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+
     var devices = await BtHidService.instance.bondedDevices();
     if (devices.isEmpty && BtHidService.instance.lastCallWasPermissionDenied) {
       // رفع همان باگ «مجوز هنوز نرسیده» — یک تلاش خودکار مجدد بعد از کمی تاخیر
@@ -346,7 +352,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   Future<void> _press(String key) async {
     final now = DateTime.now();
     if (_lastPressTime != null &&
-        now.difference(_lastPressTime!) < const Duration(milliseconds: 250)) {
+        now.difference(_lastPressTime!) < const Duration(milliseconds: 80)) {
       return;
     }
     _lastPressTime = now;
@@ -852,7 +858,7 @@ class _SmallRemoteState extends State<_SmallRemote> {
     final onPress = widget.onPress;
     final locked = !mode.supportsTouchpad;
     return ListView(
-      physics: _touchpadDragging
+      physics: (_touchpadDragging || _mouseActive)
           ? const NeverScrollableScrollPhysics()
           : const AlwaysScrollableScrollPhysics(),
       children: [

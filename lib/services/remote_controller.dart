@@ -18,6 +18,22 @@ class RemoteController {
   RemoteController(this.mode);
   final RemoteMode mode;
 
+  /// رفع باگ «دکمه Back و Home در حالت IR تلویزیون را Freeze می‌کنند»:
+  ///
+  /// ریموت فیزیکی اصلی دوو ۱۳۶۳ دکمه‌ی Back یا Home ندارد، پس کد IR واقعی
+  /// برای آن‌ها وجود ندارد. کدهای «مهندسی‌شده» که قبلاً استفاده می‌شد
+  /// گاهی باعث Freeze لحظه‌ای تلویزیون می‌شد — احتمالاً به دلیل باگ firmware
+  /// در پردازش کد ناشناخته توسط گیرنده IR تلویزیون.
+  ///
+  /// راه‌حل امن: دکمه‌های بدون کد IR واقعی به نزدیک‌ترین معادل عملکردی که
+  /// از ریموت اصلی ضبط شده (و صد درصد کار می‌کند) تغییر مسیر می‌دهند:
+  ///   • back  → exit  (کد واقعی «خروج» — مثل Back از برنامه/منو خارج می‌شود)
+  ///   • home  → menu  (کد واقعی «منو» — به صفحه اصلی منوی تلویزیون می‌رود)
+  static const _irFallback = <String, String>{
+    'back': 'exit',
+    'home': 'menu',
+  };
+
   Future<CommandResult> send(String commandKey) async {
     HapticFeedback.lightImpact();
 
@@ -35,8 +51,9 @@ class RemoteController {
       return CommandResult(ok, ok ? null : 'ارسال فرمان با خطا مواجه شد');
     }
 
-    // حالت IR
-    final pattern = IrCodes.patternFor(commandKey);
+    // حالت IR — از جایگزین امن برای دکمه‌های بدون کد واقعی استفاده می‌کنیم
+    final irKey = _irFallback[commandKey] ?? commandKey;
+    final pattern = IrCodes.patternFor(irKey);
     if (pattern == null) {
       return CommandResult(
         false,
