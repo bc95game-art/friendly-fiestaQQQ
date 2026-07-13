@@ -121,9 +121,20 @@ class MainActivity : FlutterActivity() {
         }
 
         // ثبت گیرنده HOME (Android ≤ 11)
+        // ⚠️ رفع باگ کرش اصلی: روی اندروید ۱۳+ (API 33+)، ثبت هر BroadcastReceiver
+        // بدون مشخص‌کردن صریح RECEIVER_EXPORTED/RECEIVER_NOT_EXPORTED باعث
+        // SecurityException فوری در configureFlutterEngine و کرش اپ در همان
+        // لحظه‌ی باز شدن می‌شود — دقیقاً همان چیزی که این خط قبلاً نداشت (بر
+        // خلاف btReceiver در بالا که این بررسی را داشت). چون این broadcast
+        // (CLOSE_SYSTEM_DIALOGS) فقط از سمت خودِ سیستم ارسال می‌شود، نه از
+        // اپ‌های دیگر، RECEIVER_NOT_EXPORTED صحیح و امن است.
         val sysFilter = IntentFilter("android.intent.action.CLOSE_SYSTEM_DIALOGS")
-        @Suppress("UnspecifiedRegisterReceiverFlag")
-        registerReceiver(systemReceiver, sysFilter)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(systemReceiver, sysFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(systemReceiver, sysFilter)
+        }
     }
 
     override fun onDestroy() {
