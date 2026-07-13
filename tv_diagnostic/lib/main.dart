@@ -60,7 +60,6 @@ class BtHidLookup {
     172: _BtEntry('C', 0x0223, 'home'),        // KEY_HOMEPAGE
     158: _BtEntry('C', 0x0224, 'back'),        // KEY_BACK
     139: _BtEntry('C', 0x0040, 'menu'),        // KEY_MENU
-    174: _BtEntry('C', 0x0046, 'exit'),        // KEY_STOP → exit
     362: _BtEntry('C', 0x0046, 'exit'),        // KEY_OPTION → exit (برخی TVها)
     1:   _BtEntry('C', 0x0046, 'exit'),        // KEY_ESC → exit
     352: _BtEntry('K', 0x28,   'ok'),          // KEY_OK
