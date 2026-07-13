@@ -35,23 +35,98 @@ class TvDiagnosticApp extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-//  جدول نگاشت: keyCode اندروید → معادل HID بلوتوث
-//  منبع: drivers/hid/hid-input.c (لینوکس) + استاندارد USB HID 1.12
+//  جدول نگاشت: scanCode لینوکس (EV_KEY) → معادل HID بلوتوث
+//  منبع: linux/input-event-codes.h + drivers/hid/hid-input.c + USB HID 1.12
+//
+//  چرا scanCode به جای keyCode؟
+//  scanCode = کد خام EV_KEY لینوکس که مستقیم از سخت‌افزار IR می‌آید (استاندارد جهانی)
+//  keyCode  = نگاشت اندروید که ممکن است بین دستگاه‌های مختلف فرق کند
+//  ابتدا scanCode جستجو می‌شود، اگر یافت نشد keyCode اندروید به عنوان fallback
 // ════════════════════════════════════════════════════════════════════════
 class BtHidLookup {
   BtHidLookup._();
 
-  /// نگاشت keyCode اندروید → (صفحه، usage، نام دکمه در ریموت)
-  /// page: 'C' = Consumer Control (0x0C), 'K' = Keyboard (0x07)
-  static const Map<int, _BtEntry> _table = {
-    // ── اصلی ──
+  // ══ جدول اول: scanCode (EV_KEY لینوکس) → HID بلوتوث ══════════════
+  // این جدول برای ۹۵٪+ دکمه‌های ریموت IR پوشش دارد
+  static const Map<int, _BtEntry> _scanTable = {
+    // ── اصلی ──────────────────────────────────────────────────────────
+    116: _BtEntry('C', 0x0030, 'power'),       // KEY_POWER
+    113: _BtEntry('C', 0x00E2, 'mute'),        // KEY_MUTE
+    115: _BtEntry('C', 0x00E9, 'vol_up'),      // KEY_VOLUMEUP
+    114: _BtEntry('C', 0x00EA, 'vol_down'),    // KEY_VOLUMEDOWN
+    402: _BtEntry('C', 0x009C, 'ch_up'),       // KEY_CHANNELUP
+    403: _BtEntry('C', 0x009D, 'ch_down'),     // KEY_CHANNELDOWN
+    // ── ناوبری ────────────────────────────────────────────────────────
+    172: _BtEntry('C', 0x0223, 'home'),        // KEY_HOMEPAGE
+    158: _BtEntry('C', 0x0224, 'back'),        // KEY_BACK
+    139: _BtEntry('C', 0x0040, 'menu'),        // KEY_MENU
+    174: _BtEntry('C', 0x0046, 'exit'),        // KEY_STOP → exit
+    362: _BtEntry('C', 0x0046, 'exit'),        // KEY_OPTION → exit (برخی TVها)
+    1:   _BtEntry('C', 0x0046, 'exit'),        // KEY_ESC → exit
+    352: _BtEntry('K', 0x28,   'ok'),          // KEY_OK
+    103: _BtEntry('K', 0x52,   'up'),          // KEY_UP
+    108: _BtEntry('K', 0x51,   'down'),        // KEY_DOWN
+    105: _BtEntry('K', 0x50,   'left'),        // KEY_LEFT
+    106: _BtEntry('K', 0x4F,   'right'),       // KEY_RIGHT
+    28:  _BtEntry('K', 0x28,   'return'),      // KEY_ENTER
+    // ── رسانه ─────────────────────────────────────────────────────────
+    164: _BtEntry('C', 0x00CD, 'play_pause'),  // KEY_PLAYPAUSE
+    207: _BtEntry('C', 0x00B0, 'play'),        // KEY_PLAY
+    119: _BtEntry('C', 0x00B1, 'pause'),       // KEY_PAUSE
+    166: _BtEntry('C', 0x00B7, 'stop'),        // KEY_STOPCD
+    174: _BtEntry('C', 0x00B7, 'stop'),        // KEY_STOP (ممکن است تکراری باشد با exit)
+    168: _BtEntry('C', 0x00B4, 'rewind'),      // KEY_REWIND
+    208: _BtEntry('C', 0x00B3, 'forward'),     // KEY_FASTFORWARD
+    407: _BtEntry('C', 0x00B3, 'forward'),     // KEY_FORWARD
+    163: _BtEntry('C', 0x00B5, 'next'),        // KEY_NEXTSONG
+    177: _BtEntry('C', 0x00B5, 'next'),        // KEY_NEXT
+    165: _BtEntry('C', 0x00B6, 'prev'),        // KEY_PREVIOUSSONG
+    176: _BtEntry('C', 0x00B6, 'prev'),        // KEY_PREVIOUS
+    167: _BtEntry('C', 0x00B2, 'record'),      // KEY_RECORD
+    370: _BtEntry('C', 0x00B2, 'record'),      // KEY_PVR
+    // ── اطلاعات / متا ──────────────────────────────────────────────────
+    358: _BtEntry('C', 0x0060, 'info'),        // KEY_INFO
+    377: _BtEntry('C', 0x0061, 'subtitle'),    // KEY_SUBTITLE
+    366: _BtEntry('C', 0x008D, 'epg'),         // KEY_EPG
+    378: _BtEntry('C', 0x0232, 'zoom'),        // KEY_ZOOM
+    411: _BtEntry('C', 0x0160, 'text'),        // KEY_TEXT (teletext)
+    // ── رنگ‌ها ─────────────────────────────────────────────────────────
+    398: _BtEntry('C', 0x0069, 'color_red'),   // KEY_RED
+    399: _BtEntry('C', 0x006A, 'color_green'), // KEY_GREEN
+    400: _BtEntry('C', 0x006B, 'color_yellow'),// KEY_YELLOW
+    401: _BtEntry('C', 0x006C, 'color_blue'),  // KEY_BLUE
+    // ── منبع / صوت ────────────────────────────────────────────────────
+    212: _BtEntry('C', 0x0089, 'source'),      // KEY_CAMERA (بعضی TVها برای source)
+    386: _BtEntry('C', 0x0086, 'source'),      // KEY_CHANNEL → source
+    393: _BtEntry('C', 0x0173, 'audio_track'), // KEY_AUDIO
+    392: _BtEntry('C', 0x0173, 'audio_track'), // KEY_MEDIA (جایگزین)
+    169: _BtEntry('C', 0x0040, 'menu'),        // KEY_PHONE → menu
+    // ── رادیو / متفرقه TV ──────────────────────────────────────────────
+    385: _BtEntry('C', 0x008D, 'radio'),       // KEY_RADIO (برخی ROM‌ها)
+    419: _BtEntry('C', 0x008D, 'radio'),       // KEY_RADIO (جایگزین)
+    350: _BtEntry('C', 0x0029, 'shift'),       // KEY_BOOKMARKS (برخی TVها برای shift)
+    // ── اعداد (Keyboard page) ──────────────────────────────────────────
+    2:   _BtEntry('K', 0x1E, 'num_1'),        // KEY_1
+    3:   _BtEntry('K', 0x1F, 'num_2'),        // KEY_2
+    4:   _BtEntry('K', 0x20, 'num_3'),        // KEY_3
+    5:   _BtEntry('K', 0x21, 'num_4'),        // KEY_4
+    6:   _BtEntry('K', 0x22, 'num_5'),        // KEY_5
+    7:   _BtEntry('K', 0x23, 'num_6'),        // KEY_6
+    8:   _BtEntry('K', 0x24, 'num_7'),        // KEY_7
+    9:   _BtEntry('K', 0x25, 'num_8'),        // KEY_8
+    10:  _BtEntry('K', 0x26, 'num_9'),        // KEY_9
+    11:  _BtEntry('K', 0x27, 'num_0'),        // KEY_0
+  };
+
+  // ══ جدول دوم (fallback): keyCode اندروید → HID بلوتوث ═══════════════
+  // در صورتی که scanCode در جدول بالا یافت نشد استفاده می‌شود
+  static const Map<int, _BtEntry> _keyCodeTable = {
     26:  _BtEntry('C', 0x0030, 'power'),
     164: _BtEntry('C', 0x00E2, 'mute'),
     24:  _BtEntry('C', 0x00E9, 'vol_up'),
     25:  _BtEntry('C', 0x00EA, 'vol_down'),
     166: _BtEntry('C', 0x009C, 'ch_up'),
     167: _BtEntry('C', 0x009D, 'ch_down'),
-    // ── ناوبری ──
     3:   _BtEntry('C', 0x0223, 'home'),
     4:   _BtEntry('C', 0x0224, 'back'),
     82:  _BtEntry('C', 0x0040, 'menu'),
@@ -62,7 +137,6 @@ class BtHidLookup {
     21:  _BtEntry('K', 0x50,   'left'),
     22:  _BtEntry('K', 0x4F,   'right'),
     66:  _BtEntry('K', 0x28,   'return'),
-    // ── رسانه ──
     85:  _BtEntry('C', 0x00CD, 'play_pause'),
     89:  _BtEntry('C', 0x00B4, 'rewind'),
     90:  _BtEntry('C', 0x00B3, 'forward'),
@@ -70,20 +144,16 @@ class BtHidLookup {
     88:  _BtEntry('C', 0x00B6, 'prev'),
     86:  _BtEntry('C', 0x00B7, 'stop'),
     130: _BtEntry('C', 0x00B2, 'record'),
-    // ── اطلاعات ──
     165: _BtEntry('C', 0x0060, 'info'),
     175: _BtEntry('C', 0x0061, 'subtitle'),
     172: _BtEntry('C', 0x008D, 'epg'),
     168: _BtEntry('C', 0x006D, 'zoom'),
-    // ── رنگ‌ها ──
     183: _BtEntry('C', 0x0069, 'color_red'),
     184: _BtEntry('C', 0x006A, 'color_green'),
     185: _BtEntry('C', 0x006B, 'color_yellow'),
     186: _BtEntry('C', 0x006C, 'color_blue'),
-    // ── منبع/صوت ──
     178: _BtEntry('C', 0x0089, 'source'),
     222: _BtEntry('C', 0x0173, 'audio_track'),
-    // ── اعداد (Keyboard page) ──
     7:   _BtEntry('K', 0x27, 'num_0'),
     8:   _BtEntry('K', 0x1E, 'num_1'),
     9:   _BtEntry('K', 0x1F, 'num_2'),
@@ -96,10 +166,12 @@ class BtHidLookup {
     16:  _BtEntry('K', 0x26, 'num_9'),
   };
 
-  static _BtEntry? lookup(int keyCode) => _table[keyCode];
+  /// اول scanCode (EV_KEY لینوکس) جستجو می‌شود، سپس keyCode اندروید به عنوان fallback
+  static _BtEntry? lookup(int scanCode, int keyCode) =>
+      _scanTable[scanCode] ?? _keyCodeTable[keyCode];
 
-  static String formatUsage(int keyCode) {
-    final e = _table[keyCode];
+  static String formatUsage(int scanCode, int keyCode) {
+    final e = lookup(scanCode, keyCode);
     if (e == null) return '—';
     return 'page=${e.page} usage=0x${e.usage.toRadixString(16).padLeft(4, '0').toUpperCase()}';
   }
@@ -227,7 +299,7 @@ class RecordedMapping {
         source: e.source,
         deviceName: e.deviceName,
         firstSeenTime: e.time,
-        btEntry: BtHidLookup.lookup(e.keyCode),
+        btEntry: BtHidLookup.lookup(e.scanCode, e.keyCode),
       );
 
   Map<String, dynamic> toJson() => {
