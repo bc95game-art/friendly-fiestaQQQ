@@ -41,6 +41,25 @@ class MainActivity : FlutterActivity() {
     // برای جلوگیری از ارسال رویداد تکراری از dispatchKeyEvent و onKeyDown
     private val sentKeys = LinkedHashMap<String, Long>(64, 0.75f, true)
     private val dedupeWindowMs = 30L
+    // دوبار‌فشار BACK: اول ضبط+بلوک، دوم در ۲ ثانیه عبور می‌کند
+    private var lastBackMs = 0L
+
+    // ── گیرنده HOME از طریق broadcast سیستمی ────────────────────────────
+    // ACTION_CLOSE_SYSTEM_DIALOGS با reason="homekey" وقتی HOME فشار می‌شود
+    // ارسال می‌گردد (Android ≤11 — روی اکثر تلویزیون‌های دیووو کار می‌کند)
+    private val systemReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != "android.intent.action.CLOSE_SYSTEM_DIALOGS") return
+            val reason = intent.getStringExtra("reason") ?: return
+            if (reason != "homekey") return
+            val dedupeKey = "DOWN:3:172:-1"
+            val now = System.currentTimeMillis()
+            if ((sentKeys[dedupeKey] ?: 0L) + dedupeWindowMs > now) return
+            sentKeys[dedupeKey] = now
+            val time = timeFmt.format(Date())
+            emit(keySink, "$time|DOWN|3|KEYCODE_HOME|172|SYS|-1|system|0")
+        }
+    }
 
     // ── گیرنده رویداد بلوتوث ──────────────────────────────────────────────
     private val btReceiver = object : BroadcastReceiver() {
@@ -100,16 +119,42 @@ class MainActivity : FlutterActivity() {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(btReceiver, filter)
         }
+
+        // ثبت گیرنده HOME (Android ≤ 11)
+        val sysFilter = IntentFilter("android.intent.action.CLOSE_SYSTEM_DIALOGS")
+        @Suppress("UnspecifiedRegisterReceiverFlag")
+        registerReceiver(systemReceiver, sysFilter)
     }
 
     override fun onDestroy() {
-        try { unregisterReceiver(btReceiver) } catch (_: IllegalArgumentException) {}
+        try { unregisterReceiver(btReceiver)     } catch (_: IllegalArgumentException) {}
+        try { unregisterReceiver(systemReceiver) } catch (_: IllegalArgumentException) {}
         super.onDestroy()
     }
 
     // ── ضبط همه KeyEvent‌ها از dispatchKeyEvent ─────────────────────────
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        // فقط رویداد DOWN را ضبط می‌کنیم (بدون تکرار)
+
+        // ── دکمه BACK: منطق دوبار‌فشار ──────────────────────────────────
+        // فشار اول: ضبط کن + بلوک کن (اپ بسته نشود)
+        // فشار دوم در ۲ ثانیه: عبور دادن به سیستم (بازگشت واقعی)
+        if (event.keyCode == KeyEvent.KEYCODE_BACK &&
+            event.action  == KeyEvent.ACTION_DOWN &&
+            event.repeatCount == 0) {
+            val now = System.currentTimeMillis()
+            if (!wasRecentlySent(event, "DOWN")) sendKeyEvent(event, "DOWN")
+            return if (now - lastBackMs < 2000L) {
+                lastBackMs = 0L
+                super.dispatchKeyEvent(event)           // فشار دوم → بازگشت واقعی
+            } else {
+                lastBackMs = now
+                // پیام ویژه برای نمایش Snackbar در Flutter
+                emit(keySink, "${timeFmt.format(Date())}|BACK_BLOCKED|4|KEYCODE_BACK|158|SYS|-1|system|0")
+                true                                    // فشار اول → بلوک
+            }
+        }
+
+        // ── سایر کلیدها ──────────────────────────────────────────────────
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
             sendKeyEvent(event, "DOWN")
         } else if (event.action == KeyEvent.ACTION_UP) {

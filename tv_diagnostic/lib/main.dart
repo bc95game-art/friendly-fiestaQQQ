@@ -280,7 +280,10 @@ class RecordedMapping {
   final String source;
   final String deviceName;
   final String firstSeenTime;
-  final _BtEntry? btEntry;     // معادل BT HID — null اگر در جدول نباشد
+  final _BtEntry? btEntry;
+  /// اگر true باشد این دکمه توسط سیستم اندروید قطع می‌شود
+  /// و قابل ضبط نیست — کدش از استاندارد USB HID شناخته‌شده است
+  final bool isSystemButton;
 
   const RecordedMapping({
     required this.keyCode,
@@ -290,6 +293,7 @@ class RecordedMapping {
     required this.deviceName,
     required this.firstSeenTime,
     this.btEntry,
+    this.isSystemButton = false,
   });
 
   factory RecordedMapping.fromKeyEntry(KeyEntry e) => RecordedMapping(
@@ -310,6 +314,7 @@ class RecordedMapping {
         'deviceName': deviceName,
         'firstSeenTime': firstSeenTime,
         if (btEntry != null) 'bt': btEntry!.toJson(),
+        if (isSystemButton) 'sys': true,
       };
 
   static RecordedMapping fromJson(Map<String, dynamic> j) => RecordedMapping(
@@ -322,6 +327,7 @@ class RecordedMapping {
         btEntry: j['bt'] != null
             ? _BtEntry.fromJson(j['bt'] as Map<String, dynamic>)
             : null,
+        isSystemButton: (j['sys'] as bool?) ?? false,
       );
 
   String get irLabel => 'code=$keyCode  scan=$scanCode  src=$source';
@@ -335,6 +341,25 @@ class RecordedMapping {
       '  BT:${btEntry != null ? "page=${btEntry!.page} usage=0x${btEntry!.usage.toRadixString(16).toUpperCase()}" : "ندارد"}'
       '  dev="$deviceName"  t=$firstSeenTime';
 }
+
+// ════════════════════════════════════════════════════════════════════════
+//  دکمه‌های سیستمی از پیش تعریف‌شده
+//  این دکمه‌ها را سیستم اندروید قبل از رسیدن به اپ می‌گیرد:
+//  POWER → سیستم را خاموش می‌کند، هیچ اپی نمی‌تواند آن را ببیند
+//  کدهای BT HID از استاندارد USB HID 1.12 گرفته شده و صحیح هستند
+// ════════════════════════════════════════════════════════════════════════
+const _builtInSystemButtons = <int, RecordedMapping>{
+  26: RecordedMapping(
+    keyCode: 26,
+    keyName: 'KEYCODE_POWER',
+    scanCode: 116,
+    source: 'SYS',
+    deviceName: 'سیستم — قابل ضبط نیست',
+    firstSeenTime: '—',
+    isSystemButton: true,
+    btEntry: _BtEntry('C', 0x0030, 'power'),
+  ),
+};
 
 // ════════════════════════════════════════════════════════════════════════
 //  لایه ذخیره‌ی دائمی
@@ -412,6 +437,9 @@ class _DiagnosticScreenState extends State<DiagnosticScreen>
     final saved = await MappingStore.load();
     if (!mounted) return;
     setState(() {
+      // اول دکمه‌های سیستمی ثابت را اضافه کن
+      _mappings.addAll(_builtInSystemButtons);
+      // سپس دکمه‌های ضبط‌شده (اگر capture شدند جایگزین می‌شوند)
       for (final m in saved) {
         _mappings[m.keyCode] = m;
       }
@@ -424,6 +452,21 @@ class _DiagnosticScreenState extends State<DiagnosticScreen>
       (raw) {
         final entry = KeyEntry.tryParse(raw?.toString() ?? '');
         if (entry == null) return;
+
+        // رویداد ویژه: فشار اول BACK — نمایش راهنما
+        if (entry.action == 'BACK_BLOCKED') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                'BACK ضبط شد ✓  —  دوباره فشار دهید برای بازگشت',
+                textAlign: TextAlign.center,
+              ),
+              duration: Duration(seconds: 2),
+              backgroundColor: Color(0xFF2A2A2A),
+            ));
+          }
+          return;
+        }
 
         // فقط رویداد DOWN را ضبط می‌کنیم (نه UP و نه تکرار)
         if (entry.action == 'DOWN' && entry.repeat == 0) {
@@ -493,7 +536,11 @@ class _DiagnosticScreenState extends State<DiagnosticScreen>
     );
     if (confirm == true) {
       await MappingStore.clear();
-      setState(() => _mappings.clear());
+      setState(() {
+        _mappings.clear();
+        // دکمه‌های سیستمی همیشه باید باقی بمانند
+        _mappings.addAll(_builtInSystemButtons);
+      });
     }
   }
 
@@ -695,20 +742,24 @@ class _MappingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasBt = m.btEntry != null;
+    final isSys = m.isSystemButton;
+    // رنگ border: نارنجی = سیستمی، آبی = BT دارد، خاکستری = بدون BT
+    final borderColor = isSys
+        ? const Color(0xFFFF8A65).withOpacity(0.45)
+        : hasBt
+            ? const Color(0xFF4FC3F7).withOpacity(0.35)
+            : const Color(0xFF333333);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFF141414),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: hasBt
-              ? const Color(0xFF4FC3F7).withOpacity(0.35)
-              : const Color(0xFF333333),
-        ),
+        border: Border.all(color: borderColor),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // ── سردستی: نام کلید + نشان BT ──────────────────────────────
+        // ── سردستی: نام کلید + نشان‌ها ──────────────────────────────
         Row(children: [
           Expanded(
             child: Text(
@@ -719,6 +770,23 @@ class _MappingCard extends StatelessWidget {
                   fontSize: 15),
             ),
           ),
+          // نشان سیستمی (اول — اگر هست)
+          if (isSys) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF8A65).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text('🔒 سیستمی',
+                  style: TextStyle(
+                      color: Color(0xFFFF8A65),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(width: 6),
+          ],
+          // نشان BT
           if (hasBt)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -734,7 +802,7 @@ class _MappingCard extends StatelessWidget {
                     fontWeight: FontWeight.bold),
               ),
             )
-          else
+          else if (!isSys)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
@@ -745,13 +813,25 @@ class _MappingCard extends StatelessWidget {
                   style: TextStyle(color: Color(0xFF666666), fontSize: 11)),
             ),
         ]),
+
+        // توضیح برای دکمه سیستمی
+        if (isSys) ...[
+          const SizedBox(height: 6),
+          const Text(
+            'این دکمه توسط سیستم اندروید قبل از رسیدن به اپ قطع می‌شود.\nکد BT HID از استاندارد USB HID شناخته‌شده و صحیح است.',
+            style: TextStyle(color: Color(0xFFFF8A65), fontSize: 11, height: 1.5),
+          ),
+        ],
+
         const SizedBox(height: 8),
 
         // ── فرمت IR ───────────────────────────────────────────────────
         _InfoRow(
           icon: Icons.settings_remote_rounded,
           label: 'IR',
-          value: 'keyCode=${m.keyCode}  scanCode=${m.scanCode}  src=${m.source}',
+          value: isSys
+              ? 'keyCode=${m.keyCode}  scanCode=${m.scanCode}  (استاندارد — بدون ضبط)'
+              : 'keyCode=${m.keyCode}  scanCode=${m.scanCode}  src=${m.source}',
           color: const Color(0xFFFFB74D),
         ),
         const SizedBox(height: 4),
