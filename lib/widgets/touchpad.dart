@@ -18,9 +18,24 @@ import '../theme/colors.dart';
 /// و یک ضربه‌ی ساده (بدون حرکت) = کلیک موس روی همان نقطه‌ای که نشانگر
 /// تلویزیون الان هست.
 class Touchpad extends StatefulWidget {
-  const Touchpad({super.key, required this.active, this.locked = false});
+  const Touchpad({
+    super.key,
+    required this.active,
+    this.locked = false,
+    this.onDragStart,
+    this.onDragEnd,
+  });
   final bool active;
   final bool locked;
+
+  /// ⚠️ رفع باگ «کشیدن انگشت روی تاچ‌پد کل صفحه را اسکرول می‌کند»:
+  /// چون این ویجت داخل یک ListView (در کنترل کوچک) قرار دارد، حرکت
+  /// عمودی انگشت روی پد با اسکرولِ همان لیست در «آرنای ژست» (gesture
+  /// arena) رقابت می‌کرد و گاهی لیست به‌جای نشانگر موس حرکت می‌کرد.
+  /// این دو کال‌بک به والد اجازه می‌دهند وقتی کاربر روی پد می‌کشد،
+  /// اسکرولِ لیست بیرونی را موقتاً قفل کند تا فقط نشانگر حرکت کند.
+  final VoidCallback? onDragStart;
+  final VoidCallback? onDragEnd;
 
   @override
   State<Touchpad> createState() => _TouchpadState();
@@ -65,8 +80,18 @@ class _TouchpadState extends State<Touchpad> {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: _onTap,
+      onPanStart: (_) {
+        if (_enabled) widget.onDragStart?.call();
+      },
       onPanUpdate: _onUpdate,
-      onPanEnd: (_) => setState(() => _glowPos = null),
+      onPanEnd: (_) {
+        setState(() => _glowPos = null);
+        widget.onDragEnd?.call();
+      },
+      onPanCancel: () {
+        setState(() => _glowPos = null);
+        widget.onDragEnd?.call();
+      },
       child: Container(
         height: 160,
         decoration: BoxDecoration(

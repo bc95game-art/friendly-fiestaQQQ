@@ -816,6 +816,14 @@ class _SmallRemote extends StatefulWidget {
 class _SmallRemoteState extends State<_SmallRemote> {
   bool _mouseActive = false;
 
+  /// ⚠️ رفع باگ «موقع حرکت‌دادن نشانگر با تاچ‌پد، کل صفحه‌ی کنترل هم
+  /// اسکرول می‌شود»: صفحه‌ی کنترل کوچک داخل یک ListView قابل‌اسکرول است
+  /// و تاچ‌پد هم در همان لیست قرار دارد؛ کشیدن عمودی انگشت هم‌زمان هم
+  /// به‌عنوان «اسکرول لیست» و هم «حرکت موس» تفسیر می‌شد. با این پرچم،
+  /// در طول کشیدن انگشت روی تاچ‌پد، اسکرول لیست بیرونی موقتاً غیرفعال
+  /// می‌شود تا فقط نشانگر تلویزیون حرکت کند.
+  bool _touchpadDragging = false;
+
   /// ⚠️ رفع باگ «OK در حالت موس روی گزینه‌ی فوکوس D-pad کلیک می‌کند نه
   /// روی جایی که موس است»:
   ///
@@ -844,6 +852,9 @@ class _SmallRemoteState extends State<_SmallRemote> {
     final onPress = widget.onPress;
     final locked = !mode.supportsTouchpad;
     return ListView(
+      physics: _touchpadDragging
+          ? const NeverScrollableScrollPhysics()
+          : const AlwaysScrollableScrollPhysics(),
       children: [
         // ── Power / Mic ──────────────────────────────────────────────────
         Row(
@@ -1002,7 +1013,12 @@ class _SmallRemoteState extends State<_SmallRemote> {
         const SizedBox(height: 16),
 
         // ── تاچ‌پد موس (فقط بلوتوث — با پروفایل HID موس واقعی) ───────────
-        Touchpad(active: _mouseActive, locked: locked),
+        Touchpad(
+          active: _mouseActive,
+          locked: locked,
+          onDragStart: () => setState(() => _touchpadDragging = true),
+          onDragEnd: () => setState(() => _touchpadDragging = false),
+        ),
         const SizedBox(height: 16),
       ],
     );

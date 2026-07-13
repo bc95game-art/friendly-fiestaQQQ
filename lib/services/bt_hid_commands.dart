@@ -37,11 +37,20 @@ class BtHidCommands {
     'back': BtHidCommand(true, 0x0224), // AC Back
     'menu': BtHidCommand(true, 0x0040), // Menu
     'exit': BtHidCommand(true, 0x0046), // Menu Escape
-    'ok': BtHidCommand(true, 0x0041), // Menu Pick
-    'up': BtHidCommand(true, 0x0042), // Menu Up
-    'down': BtHidCommand(true, 0x0043), // Menu Down
-    'left': BtHidCommand(true, 0x0044), // Menu Left
-    'right': BtHidCommand(true, 0x0045), // Menu Right
+    // ⚠️ رفع باگ اصلی گزارش‌شده («در کنترل بزرگ فقط چپ/راست/Home کار
+    // می‌کند»): کدهای Consumer Page «Menu Pick/Up/Down/Left/Right»
+    // (0x041-0x045) به‌صورت اختیاری در HID پیاده‌سازی می‌شوند و روی
+    // باکس‌های اندروید ارزان/بدون‌برند (مثل این تلویزیون) اغلب فقط
+    // بخشی از آن‌ها واقعاً به کلید ناوبری تبدیل می‌شود. صفحه‌ی کیبورد
+    // (Keyboard Page) برای پیکان‌ها/Enter استاندارد و همه‌جا (از جمله
+    // روی این نوع باکس‌ها) به‌صورت تضمینی پشتیبانی می‌شود، چون همان
+    // پروتکل پایه‌ی «بوت کیبورد» است. به همین دلیل ناوبری را از Consumer
+    // به Keyboard منتقل کردیم تا OK/بالا/پایین/چپ/راست همیشه کار کنند.
+    'ok': BtHidCommand(false, 0x28), // Keyboard Enter/Return
+    'up': BtHidCommand(false, 0x52), // Keyboard Up Arrow
+    'down': BtHidCommand(false, 0x51), // Keyboard Down Arrow
+    'left': BtHidCommand(false, 0x50), // Keyboard Left Arrow
+    'right': BtHidCommand(false, 0x4F), // Keyboard Right Arrow
     'play_pause': BtHidCommand(true, 0x00CD), // Play/Pause
     'rewind': BtHidCommand(true, 0x00B4), // Rewind
     'forward': BtHidCommand(true, 0x00B3), // Fast Forward
