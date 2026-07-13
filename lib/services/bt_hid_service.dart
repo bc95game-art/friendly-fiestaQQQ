@@ -169,6 +169,12 @@ class BtHidService {
           await _channel.invokeMethod<List<Object?>>('bondedDevices') ?? [];
       return result
           .whereType<Map<Object?, Object?>>()
+          // ⚠️ رفع باگ احتیاطی: قبلاً «m['address'] as String» بدون بررسی null
+          // بود — اگر نقشه‌ی برگشتی از سمت نیتیو (به هر دلیلی) فیلد address
+          // نداشت، این cast یک TypeError پرتاب می‌کرد که هیچ catch محلی آن
+          // را نمی‌گرفت (فقط PlatformException گرفته می‌شد). حالا آیتم‌های
+          // بدون آدرس معتبر به‌جای throw، فقط فیلتر می‌شوند.
+          .where((m) => m['address'] is String)
           .map((m) {
             final name = (m['name'] as String?) ?? '';
             return BtBondedDevice(
@@ -179,6 +185,10 @@ class BtHidService {
           .toList();
     } on PlatformException catch (e) {
       if (e.code == 'permission_denied') lastCallWasPermissionDenied = true;
+      return [];
+    } catch (_) {
+      // هر خطای غیرمنتظره‌ی دیگر (مثل TypeError روی داده‌ی بدشکل) — به‌جای
+      // throw، فقط لیست خالی برگردانده می‌شود تا UI بشکند نه کل اپ.
       return [];
     }
   }
