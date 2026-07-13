@@ -340,4 +340,15 @@ class BtHidService {
       return null;
     }
   }
+
+  /// متن آخرین کرشِ نیتیو (اندروید) اگر از باز شدن قبلی اپ باقی مانده باشد
+  /// — چون کاربر به adb/logcat دسترسی ندارد، اپ خودش آن را ذخیره و یک‌بار
+  /// نمایش می‌دهد. بعد از خواندن، سمت نیتیو خودش فایل را پاک می‌کند.
+  Future<String?> takeLastCrashLog() async {
+    try {
+      return await _channel.invokeMethod<String>('lastCrashLog');
+    } catch (_) {
+      return null;
+    }
+  }
 }

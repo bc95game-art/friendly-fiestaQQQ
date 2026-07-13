@@ -15,7 +15,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -143,19 +142,9 @@ class MainActivity : FlutterActivity() {
         )
     }
 
-    override fun onCreate(savedInstanceState: android.os.Bundle?) {
-        // ⚠️ برای اینکه اگر باز هم کرشی رخ داد (مثلاً یک java.lang.Error در عمق
-        // پشته‌ی بلوتوث سازنده که حتی catch(Throwable) داخل این فایل هم به آن
-        // نمی‌رسد چون در ترد دیگری پرتاب می‌شود)، حداقل با تگ مشخص و کامل در
-        // logcat ثبت شود — تا با «adb logcat -s DaewooRemoteCrash» بشود علت
-        // دقیق را پیدا کرد، به‌جای اینکه فقط بدانیم «اپ بسته شد».
-        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            Log.e("DaewooRemoteCrash", "Uncaught exception on thread ${thread.name}", throwable)
-            previousHandler?.uncaughtException(thread, throwable)
-        }
-        super.onCreate(savedInstanceState)
-    }
+    // نکته: نصبِ گیرنده‌ی سراسری کرش (CrashLogger.install) به DaewooApplication
+    // منتقل شد — چون Application.onCreate زودتر از MainActivity.onCreate اجرا
+    // می‌شود و پس زودترین لحظه‌ی ممکن برای گرفتن هر کرش احتمالی است.
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -268,6 +257,12 @@ class MainActivity : FlutterActivity() {
                     "sendMouseClick" -> {
                         result.success(sendMouseClick())
                     }
+                    // ⚠️ بدون دسترسی کاربر به logcat/Play Console، تنها راه واقعی
+                    // فهمیدن علت دقیق کرش این است که خودِ اپ آن را ذخیره کند.
+                    // این متد آخرین کرش ثبت‌شده توسط CrashLogger (نوشته‌شده در
+                    // Application.onCreate، قبل از هر چیز دیگر) را می‌خواند و
+                    // بعد از خواندن پاک می‌کند تا فقط یک‌بار نمایش داده شود.
+                    "lastCrashLog" -> result.success(CrashLogger.readAndClear(applicationContext))
                     else -> result.notImplemented()
                 }
             }

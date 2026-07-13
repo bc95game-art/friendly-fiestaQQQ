@@ -38,6 +38,7 @@
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <application
+        android:name=".DaewooApplication"
         android:label="کنترل هوشمند دوو"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"

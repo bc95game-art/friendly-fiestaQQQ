@@ -1,10 +1,51 @@
 import 'package:flutter/material.dart';
 import '../models/remote_mode.dart';
+import '../services/bt_hid_service.dart';
 import '../theme/colors.dart';
 import 'size_picker_screen.dart';
 
-class WelcomeScreen extends StatelessWidget {
+class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
+
+  @override
+  State<WelcomeScreen> createState() => _WelcomeScreenState();
+}
+
+class _WelcomeScreenState extends State<WelcomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // ⚠️ چون کاربر به adb/logcat یا Play Console دسترسی ندارد، تنها راه
+    // دیدن علت واقعی یک کرش قبلی همین است: بعد از هر بار باز شدن اپ، از
+    // سمت نیتیو می‌پرسیم آیا کرشی از باز شدن قبلی ثبت شده — اگر بله، یک‌بار
+    // در قالب دیالوگِ قابل‌کپی نشان می‌دهیم تا کاربر بتواند از آن اسکرین‌شات
+    // بگیرد یا متنش را کپی/ارسال کند.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkLastCrash());
+  }
+
+  Future<void> _checkLastCrash() async {
+    final log = await BtHidService.instance.takeLastCrashLog();
+    if (log == null || log.trim().isEmpty || !mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        title: const Text('گزارش کرش قبلی', style: TextStyle(color: AppColors.text1)),
+        content: SingleChildScrollView(
+          child: SelectableText(
+            log,
+            style: const TextStyle(color: AppColors.text2, fontSize: 12, fontFamily: 'monospace'),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('باشه'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
