@@ -328,42 +328,80 @@ class MainActivity : FlutterActivity() {
 
         adapter.getProfileProxy(this, object : BluetoothProfile.ServiceListener {
             override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
-                hidDevice = proxy as BluetoothHidDevice
-                val ok = hidDevice?.registerApp(
-                    sdp, qos, qos, directExecutor,
-                    object : BluetoothHidDevice.Callback() {
-                        override fun onAppStatusChanged(
-                            pluggedDevice: BluetoothDevice?,
-                            registeredNow: Boolean
-                        ) {
-                            registered = registeredNow
-                        }
+                // ⚠️ رفع باگ crash: قبلاً «proxy as BluetoothHidDevice» (بدون ?)
+                // استفاده می‌شد — اگر proxy از نوع اشتباه می‌بود ClassCastException
+                // uncaught می‌انداخت و اپ crash می‌کرد. حالا از cast ایمن استفاده می‌شود.
+                val hid = proxy as? BluetoothHidDevice
+                if (hid == null) {
+                    registering = false
+                    result.error("register_failed", "پروفایل HID در دسترس نیست", null)
+                    return
+                }
+                hidDevice = hid
 
-                        override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
-                            when (state) {
-                                BluetoothProfile.STATE_CONNECTED -> {
-                                    connectedDevice = device
-                                    hidEventSink?.success("connected")
+                // ⚠️ رفع باگ crash اصلی: روی اندروید ۱۲+ (API 31+)، متد registerApp
+                // در صورت نبودِ مجوز BLUETOOTH_CONNECT (یا هر مشکل سطح سیستم‌عامل)
+                // یک SecurityException پرتاب می‌کند. این استثنا قبلاً اصلاً catch نمی‌شد
+                // و چون در main thread بود، فوراً اپ را crash می‌کرد و می‌بست.
+                // همچنین پرچم «registering» هرگز false نمی‌شد — یعنی بعد از crash و
+                // باز کردن دوباره اپ (بدون ری‌استارت کامل) ثبت دیگر هرگز اتفاق
+                // نمی‌افتاد. حالا هر دو مشکل رفع شده‌اند.
+                val hidCallback = object : BluetoothHidDevice.Callback() {
+                    override fun onAppStatusChanged(
+                        pluggedDevice: BluetoothDevice?,
+                        registeredNow: Boolean
+                    ) {
+                        registered = registeredNow
+                    }
+
+                    override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
+                        when (state) {
+                            BluetoothProfile.STATE_CONNECTED -> {
+                                connectedDevice = device
+                                hidEventSink?.success("connected")
+                            }
+                            BluetoothProfile.STATE_CONNECTING -> {
+                                hidEventSink?.success("connecting")
+                            }
+                            BluetoothProfile.STATE_DISCONNECTED,
+                            BluetoothProfile.STATE_DISCONNECTING -> {
+                                if (connectedDevice?.address == device?.address) {
+                                    connectedDevice = null
                                 }
-                                BluetoothProfile.STATE_CONNECTING -> {
-                                    hidEventSink?.success("connecting")
-                                }
-                                BluetoothProfile.STATE_DISCONNECTED,
-                                BluetoothProfile.STATE_DISCONNECTING -> {
-                                    if (connectedDevice?.address == device?.address) {
-                                        connectedDevice = null
-                                    }
-                                    hidEventSink?.success("disconnected")
-                                }
+                                hidEventSink?.success("disconnected")
                             }
                         }
                     }
-                ) ?: false
+                }
+
+                val ok: Boolean
+                try {
+                    ok = hid.registerApp(sdp, qos, qos, directExecutor, hidCallback) ?: false
+                } catch (e: SecurityException) {
+                    // مجوز BLUETOOTH_CONNECT در لحظه‌ی ثبت وجود نداشت
+                    registering = false
+                    result.error(
+                        "permission_denied",
+                        "مجوز بلوتوث برای ثبت HID لازم است — دوباره مجوز را اعطا کنید",
+                        null
+                    )
+                    return
+                } catch (e: Exception) {
+                    // هر خطای دیگر (IllegalStateException، NullPointerException، ...)
+                    registering = false
+                    result.error(
+                        "register_failed",
+                        e.message ?: "خطای نامشخص در ثبت پروفایل HID",
+                        null
+                    )
+                    return
+                }
+
                 registering = false
                 if (ok) {
                     result.success(true)
                 } else {
-                    result.error("register_failed", "ثبت پروفایل HID بلوتوث ناموفق بود", null)
+                    result.success(false)  // ok=false بدون استثنا → برگردان false به Dart
                 }
             }
 
@@ -413,7 +451,17 @@ class MainActivity : FlutterActivity() {
 
     private fun connectTo(address: String?, result: MethodChannel.Result) {
         val adapter = adapter()
-        val device = adapter?.bondedDevices?.firstOrNull { it.address == address }
+        // ⚠️ رفع باگ: روی اندروید ۱۲+ (API 31+)، دسترسی به bondedDevices
+        // می‌تواند SecurityException بیندازد حتی وقتی hasConnectPermission()
+        // true برگردانده — چون بین بررسی مجوز و فراخوانی این متد چند میلی‌ثانیه
+        // فاصله است و سیستم ممکن است آن را ابطال کند. این exception قبلاً
+        // uncaught بود و اپ را crash می‌کرد.
+        val device = try {
+            adapter?.bondedDevices?.firstOrNull { it.address == address }
+        } catch (e: SecurityException) {
+            result.error("permission_denied", "مجوز بلوتوث برای اتصال لازم است", null)
+            return
+        }
         val hid = hidDevice
         if (address == null || device == null || hid == null) {
             result.success(false)
