@@ -71,7 +71,7 @@ class _DiagnosticScreenState extends State<DiagnosticScreen> {
 
   Future<void> _shareLog() async {
     final text = _log.reversed.join('\n');
-    await SharePlus.instance.share(ShareParams(text: text, subject: 'لاگ دیاگ ریموت دوو'));
+    await Share.share(text, subject: 'لاگ دیاگ ریموت دوو');
   }
 
   @override
