@@ -451,15 +451,16 @@ class MainActivity : FlutterActivity() {
 
     private fun connectTo(address: String?, result: MethodChannel.Result) {
         val adapter = adapter()
-        // ⚠️ رفع باگ: روی اندروید ۱۲+ (API 31+)، دسترسی به bondedDevices
-        // می‌تواند SecurityException بیندازد حتی وقتی hasConnectPermission()
-        // true برگردانده — چون بین بررسی مجوز و فراخوانی این متد چند میلی‌ثانیه
-        // فاصله است و سیستم ممکن است آن را ابطال کند. این exception قبلاً
-        // uncaught بود و اپ را crash می‌کرد.
+        // ⚠️ رفع باگ کرش: adapter?.bondedDevices روی اندروید ۱۲+ (API 31+) یا
+        // برخی ROM‌های سفارشی می‌تواند SecurityException یا IllegalStateException
+        // پرتاب کند حتی بعد از اعطای مجوز (race بین بررسی مجوز و فراخوانی).
+        // چون این کد خارج از try-catch کانال متد Flutter اجرا می‌شود، هر
+        // استثنای دستنگیرنشده مستقیماً به Android Looper می‌رسد و اپ را کرش
+        // می‌کند. Exception (نه فقط SecurityException) برای پوشش همه حالات.
         val device = try {
             adapter?.bondedDevices?.firstOrNull { it.address == address }
-        } catch (e: SecurityException) {
-            result.error("permission_denied", "مجوز بلوتوث برای اتصال لازم است", null)
+        } catch (e: Exception) {
+            result.success(false)
             return
         }
         val hid = hidDevice
@@ -477,7 +478,7 @@ class MainActivity : FlutterActivity() {
         }
         try {
             result.success(hid.connect(device))
-        } catch (e: SecurityException) {
+        } catch (e: Exception) {
             result.success(false)
         }
     }
@@ -519,13 +520,17 @@ class MainActivity : FlutterActivity() {
         val press = byteArrayOf((usage and 0xFF).toByte(), ((usage shr 8) and 0xFF).toByte())
         val ok = try {
             hid.sendReport(device, REPORT_ID_CONSUMER.toInt(), press)
-        } catch (e: SecurityException) {
+        } catch (e: Exception) {
             false
         }
         mainHandler.postDelayed({
+            // ⚠️ رفع باگ کرش: postDelayed روی main looper اجرا می‌شود — هر
+            // استثنای دستنگیرنشده اینجا (مثل IllegalStateException هنگام ریست
+            // پروفایل HID یا DeadObjectException اگر سرویس بلوتوث کرش کند)
+            // مستقیماً اپ را از کار می‌اندازد. باید همه‌ی خطاها اینجا گرفته شوند.
             try {
                 hid.sendReport(device, REPORT_ID_CONSUMER.toInt(), byteArrayOf(0, 0))
-            } catch (e: SecurityException) {
+            } catch (e: Exception) {
                 // نادیده گرفته می‌شود
             }
         }, RELEASE_DELAY_MS)
@@ -548,13 +553,15 @@ class MainActivity : FlutterActivity() {
         }
         val ok = try {
             hid.sendReport(device, REPORT_ID_KEYBOARD.toInt(), press)
-        } catch (e: SecurityException) {
+        } catch (e: Exception) {
             false
         }
         mainHandler.postDelayed({
+            // ⚠️ رفع باگ کرش: مانند release مربوط به Consumer، اینجا هم
+            // همه‌ی خطاها باید گرفته شوند تا main looper کرش نکند.
             try {
                 hid.sendReport(device, REPORT_ID_KEYBOARD.toInt(), ByteArray(8))
-            } catch (e: SecurityException) {
+            } catch (e: Exception) {
                 // نادیده گرفته می‌شود
             }
         }, RELEASE_DELAY_MS)
@@ -569,7 +576,7 @@ class MainActivity : FlutterActivity() {
         val report = byteArrayOf(buttons.toByte(), clampedDx.toByte(), clampedDy.toByte())
         return try {
             hid.sendReport(device, REPORT_ID_MOUSE.toInt(), report)
-        } catch (e: SecurityException) {
+        } catch (e: Exception) {
             false
         }
     }

@@ -35,6 +35,14 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   int _reconnectAttempts = 0;
   static const _maxAutoRetries = 5;
 
+  // ⚠️ رفع باگ کرش: اگر _initBluetooth بدون await صدا زده شود (از initState،
+  // از timer و از lifecycle همزمان)، چند نمونه موازی اجرا می‌شوند. هر نمونه
+  // _emit(connecting/error) می‌فرستد → هر emit یک _scheduleAutoReconnect جدید
+  // برنامه‌ریزی می‌کند → تعداد timerها به‌صورت نمایی رشد می‌کند → در نهایت
+  // فشار حافظه/CPU باعث ANR یا OOM و کرش اپ می‌شود. این پرچم تضمین می‌کند
+  // که در هر لحظه فقط یک _initBluetooth در حال اجرا باشد.
+  bool _btInitializing = false;
+
   // ── دیباونس: جلوگیری از ارسال چند فرمان همزمان هنگام ضربه‌های سریع ──
   DateTime? _lastPressTime;
 
@@ -95,6 +103,21 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   //  ۳) در didChangeAppLifecycleState وقتی اپ به پیش‌زمینه برمی‌گردد و
   //     دیگر متصل نیست، همین منطق دوباره اجرا می‌شود — بدون لمس دستی.
   Future<void> _initBluetooth() async {
+    // ⚠️ رفع باگ کرش: جلوگیری از اجرای موازی. اگر یک _initBluetooth در
+    // حال اجرا باشد، فراخوان جدید بی‌درنگ برمی‌گردد. بدون این پرچم، هر
+    // _emit(error/disconnected) یک تایمر جدید برنامه‌ریزی می‌کند و چند
+    // _initBluetooth هم‌زمان اجرا می‌شوند — هر کدام دوباره emit می‌فرستند
+    // و سیل تایمرها باعث OOM یا ANR و در نهایت کرش می‌شود.
+    if (_btInitializing) return;
+    _btInitializing = true;
+    try {
+      await _initBluetoothInner();
+    } finally {
+      _btInitializing = false;
+    }
+  }
+
+  Future<void> _initBluetoothInner() async {
     final supported = await BtHidService.instance.initialize();
     if (!mounted) return;
     if (!supported) {
