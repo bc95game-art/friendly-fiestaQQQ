@@ -348,7 +348,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     );
   }
 
-  // ── ارسال دستور با دیباونس ۲۵۰ms ────────────────────────────────────────
+  // ── ارسال دستور با دیباونس ۸۰ms ─────────────────────────────────────────
   Future<void> _press(String key) async {
     final now = DateTime.now();
     if (_lastPressTime != null &&
