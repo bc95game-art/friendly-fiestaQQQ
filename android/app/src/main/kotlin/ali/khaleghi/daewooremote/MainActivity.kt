@@ -15,6 +15,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -140,6 +141,20 @@ class MainActivity : FlutterActivity() {
             0xC0.toByte(),          // End Collection
             0xC0.toByte()           // End Collection
         )
+    }
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        // ⚠️ برای اینکه اگر باز هم کرشی رخ داد (مثلاً یک java.lang.Error در عمق
+        // پشته‌ی بلوتوث سازنده که حتی catch(Throwable) داخل این فایل هم به آن
+        // نمی‌رسد چون در ترد دیگری پرتاب می‌شود)، حداقل با تگ مشخص و کامل در
+        // logcat ثبت شود — تا با «adb logcat -s DaewooRemoteCrash» بشود علت
+        // دقیق را پیدا کرد، به‌جای اینکه فقط بدانیم «اپ بسته شد».
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            Log.e("DaewooRemoteCrash", "Uncaught exception on thread ${thread.name}", throwable)
+            previousHandler?.uncaughtException(thread, throwable)
+        }
+        super.onCreate(savedInstanceState)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -386,8 +401,14 @@ class MainActivity : FlutterActivity() {
                         null
                     )
                     return
-                } catch (e: Exception) {
-                    // هر خطای دیگر (IllegalStateException، NullPointerException، ...)
+                } catch (e: Throwable) {
+                    // ⚠️ رفع باگ کرش: قبلاً فقط Exception گرفته می‌شد. اما بعضی
+                    // خطاهای واقعی این مسیر از نوع java.lang.Error هستند (مثل
+                    // NoSuchMethodError/AbstractMethodError روی پشته‌ی بلوتوث
+                    // برخی سازنده‌ها/ROMهای سفارشی، یا OutOfMemoryError لحظه‌ای)
+                    // و Error زیرکلاس Exception نیست — با catch(Exception) قبلی
+                    // اصلاً گرفته نمی‌شد و همچنان اپ را crash می‌کرد. Throwable
+                    // که هم Exception و هم Error را می‌گیرد، تنها راه ایمن است.
                     registering = false
                     result.error(
                         "register_failed",
@@ -444,7 +465,7 @@ class MainActivity : FlutterActivity() {
             adapter.bondedDevices.map { d ->
                 mapOf("name" to (d.name ?: ""), "address" to d.address)
             }
-        } catch (e: SecurityException) {
+        } catch (e: Throwable) {
             emptyList()
         }
     }
@@ -459,7 +480,7 @@ class MainActivity : FlutterActivity() {
         // می‌کند. Exception (نه فقط SecurityException) برای پوشش همه حالات.
         val device = try {
             adapter?.bondedDevices?.firstOrNull { it.address == address }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             result.success(false)
             return
         }
@@ -478,7 +499,7 @@ class MainActivity : FlutterActivity() {
         }
         try {
             result.success(hid.connect(device))
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             result.success(false)
         }
     }
@@ -487,7 +508,7 @@ class MainActivity : FlutterActivity() {
         val device = connectedDevice ?: return
         try {
             hidDevice?.disconnect(device)
-        } catch (e: SecurityException) {
+        } catch (e: Throwable) {
             // نادیده گرفته می‌شود
         }
         connectedDevice = null
@@ -501,10 +522,10 @@ class MainActivity : FlutterActivity() {
         try {
             val device = connectedDevice
             if (device != null) {
-                try { hidDevice?.disconnect(device) } catch (e: SecurityException) {}
+                try { hidDevice?.disconnect(device) } catch (e: Throwable) {}
             }
-            try { hidDevice?.unregisterApp() } catch (e: SecurityException) {}
-        } catch (e: Exception) {
+            try { hidDevice?.unregisterApp() } catch (e: Throwable) {}
+        } catch (e: Throwable) {
             // نادیده گرفته می‌شود — هدف فقط پاک‌سازی وضعیت است
         }
         registered = false
@@ -520,17 +541,18 @@ class MainActivity : FlutterActivity() {
         val press = byteArrayOf((usage and 0xFF).toByte(), ((usage shr 8) and 0xFF).toByte())
         val ok = try {
             hid.sendReport(device, REPORT_ID_CONSUMER.toInt(), press)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             false
         }
         mainHandler.postDelayed({
             // ⚠️ رفع باگ کرش: postDelayed روی main looper اجرا می‌شود — هر
             // استثنای دستنگیرنشده اینجا (مثل IllegalStateException هنگام ریست
-            // پروفایل HID یا DeadObjectException اگر سرویس بلوتوث کرش کند)
-            // مستقیماً اپ را از کار می‌اندازد. باید همه‌ی خطاها اینجا گرفته شوند.
+            // پروفایل HID یا DeadObjectException اگر سرویس بلوتوث کرش کند، یا
+            // حتی یک java.lang.Error روی پشته‌ی بلوتوث بعضی سازنده‌ها) مستقیماً
+            // اپ را از کار می‌اندازد. Throwable هر دو Exception و Error را می‌گیرد.
             try {
                 hid.sendReport(device, REPORT_ID_CONSUMER.toInt(), byteArrayOf(0, 0))
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 // نادیده گرفته می‌شود
             }
         }, RELEASE_DELAY_MS)
@@ -553,15 +575,15 @@ class MainActivity : FlutterActivity() {
         }
         val ok = try {
             hid.sendReport(device, REPORT_ID_KEYBOARD.toInt(), press)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             false
         }
         mainHandler.postDelayed({
             // ⚠️ رفع باگ کرش: مانند release مربوط به Consumer، اینجا هم
-            // همه‌ی خطاها باید گرفته شوند تا main looper کرش نکند.
+            // همه‌ی خطاها (Exception و Error) باید گرفته شوند تا main looper کرش نکند.
             try {
                 hid.sendReport(device, REPORT_ID_KEYBOARD.toInt(), ByteArray(8))
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 // نادیده گرفته می‌شود
             }
         }, RELEASE_DELAY_MS)
@@ -576,7 +598,7 @@ class MainActivity : FlutterActivity() {
         val report = byteArrayOf(buttons.toByte(), clampedDx.toByte(), clampedDy.toByte())
         return try {
             hid.sendReport(device, REPORT_ID_MOUSE.toInt(), report)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             false
         }
     }
