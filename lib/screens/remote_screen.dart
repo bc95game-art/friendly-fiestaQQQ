@@ -174,6 +174,12 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     if (state == AppLifecycleState.resumed &&
         widget.mode.isBluetooth &&
         !BtHidService.instance.isConnected) {
+      // ⚠️ رفع باگ race: اگر _retryTimer در صف بود و اپ همزمان به پیش‌زمینه
+      // برگشت، دو مسیر اتصال موازی اجرا می‌شدند — timer و lifecycle هر دو
+      // _initBluetooth صدا می‌زدند. الان timer کنسل می‌شود تا فقط یک مسیر
+      // ادامه یابد؛ _scheduleAutoReconnect بعداً در صورت نیاز دوباره فعال می‌شود.
+      _retryTimer?.cancel();
+      _reconnectAttempts = 0;
       _initBluetooth();
     }
   }
@@ -235,6 +241,8 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     );
     if (chosen != null) {
       await BtHidService.instance.connect(chosen.address);
+      // ⚠️ رفع باگ: بعد از await اتصال، widget ممکن است dispose شده باشد
+      if (!mounted) return;
     }
   }
 

@@ -487,7 +487,17 @@ class MainActivity : FlutterActivity() {
     private fun sendKeyboardUsage(usage: Int): Boolean {
         val device = connectedDevice ?: return false
         val hid = hidDevice ?: return false
-        val press = byteArrayOf(0, 0, usage.toByte(), 0, 0, 0, 0, 0)
+        // ⚠️ رفع باگ HID: کدهای 0xE0-0xE7 کلیدهای Modifier هستند (LCtrl, LShift,
+        // LAlt, LMeta, RCtrl, RShift, RAlt, RMeta). این کدها باید در بایت صفرم
+        // گزارش (modifier byte) به‌صورت bitmask قرار گیرند، نه در جایگاه keycode
+        // (بایت دوم). قبلاً shift (0xE1) در بایت keycode فرستاده می‌شد که خلاف
+        // مشخصات HID است و برخی دستگاه‌ها آن را نادیده می‌گرفتند.
+        val press = if (usage in 0xE0..0xE7) {
+            val modifierBit = 1 shl (usage - 0xE0)  // 0xE1→bit1=0x02=LShift
+            byteArrayOf(modifierBit.toByte(), 0, 0, 0, 0, 0, 0, 0)
+        } else {
+            byteArrayOf(0, 0, usage.toByte(), 0, 0, 0, 0, 0)
+        }
         val ok = try {
             hid.sendReport(device, REPORT_ID_KEYBOARD.toInt(), press)
         } catch (e: SecurityException) {
