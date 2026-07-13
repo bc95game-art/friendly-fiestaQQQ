@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() => runApp(const TvDiagnosticApp());
 
@@ -32,10 +34,101 @@ class TvDiagnosticApp extends StatelessWidget {
   }
 }
 
-// ── مدل یک رویداد کلید ──────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+//  جدول نگاشت: keyCode اندروید → معادل HID بلوتوث
+//  منبع: drivers/hid/hid-input.c (لینوکس) + استاندارد USB HID 1.12
+// ════════════════════════════════════════════════════════════════════════
+class BtHidLookup {
+  BtHidLookup._();
+
+  /// نگاشت keyCode اندروید → (صفحه، usage، نام دکمه در ریموت)
+  /// page: 'C' = Consumer Control (0x0C), 'K' = Keyboard (0x07)
+  static const Map<int, _BtEntry> _table = {
+    // ── اصلی ──
+    26:  _BtEntry('C', 0x0030, 'power'),
+    164: _BtEntry('C', 0x00E2, 'mute'),
+    24:  _BtEntry('C', 0x00E9, 'vol_up'),
+    25:  _BtEntry('C', 0x00EA, 'vol_down'),
+    166: _BtEntry('C', 0x009C, 'ch_up'),
+    167: _BtEntry('C', 0x009D, 'ch_down'),
+    // ── ناوبری ──
+    3:   _BtEntry('C', 0x0223, 'home'),
+    4:   _BtEntry('C', 0x0224, 'back'),
+    82:  _BtEntry('C', 0x0040, 'menu'),
+    111: _BtEntry('C', 0x0046, 'exit'),
+    23:  _BtEntry('K', 0x28,   'ok'),
+    19:  _BtEntry('K', 0x52,   'up'),
+    20:  _BtEntry('K', 0x51,   'down'),
+    21:  _BtEntry('K', 0x50,   'left'),
+    22:  _BtEntry('K', 0x4F,   'right'),
+    66:  _BtEntry('K', 0x28,   'return'),
+    // ── رسانه ──
+    85:  _BtEntry('C', 0x00CD, 'play_pause'),
+    89:  _BtEntry('C', 0x00B4, 'rewind'),
+    90:  _BtEntry('C', 0x00B3, 'forward'),
+    87:  _BtEntry('C', 0x00B5, 'next'),
+    88:  _BtEntry('C', 0x00B6, 'prev'),
+    86:  _BtEntry('C', 0x00B7, 'stop'),
+    130: _BtEntry('C', 0x00B2, 'record'),
+    // ── اطلاعات ──
+    165: _BtEntry('C', 0x0060, 'info'),
+    175: _BtEntry('C', 0x0061, 'subtitle'),
+    172: _BtEntry('C', 0x008D, 'epg'),
+    168: _BtEntry('C', 0x006D, 'zoom'),
+    // ── رنگ‌ها ──
+    183: _BtEntry('C', 0x0069, 'color_red'),
+    184: _BtEntry('C', 0x006A, 'color_green'),
+    185: _BtEntry('C', 0x006B, 'color_yellow'),
+    186: _BtEntry('C', 0x006C, 'color_blue'),
+    // ── منبع/صوت ──
+    178: _BtEntry('C', 0x0089, 'source'),
+    222: _BtEntry('C', 0x0173, 'audio_track'),
+    // ── اعداد (Keyboard page) ──
+    7:   _BtEntry('K', 0x27, 'num_0'),
+    8:   _BtEntry('K', 0x1E, 'num_1'),
+    9:   _BtEntry('K', 0x1F, 'num_2'),
+    10:  _BtEntry('K', 0x20, 'num_3'),
+    11:  _BtEntry('K', 0x21, 'num_4'),
+    12:  _BtEntry('K', 0x22, 'num_5'),
+    13:  _BtEntry('K', 0x23, 'num_6'),
+    14:  _BtEntry('K', 0x24, 'num_7'),
+    15:  _BtEntry('K', 0x25, 'num_8'),
+    16:  _BtEntry('K', 0x26, 'num_9'),
+  };
+
+  static _BtEntry? lookup(int keyCode) => _table[keyCode];
+
+  static String formatUsage(int keyCode) {
+    final e = _table[keyCode];
+    if (e == null) return '—';
+    return 'page=${e.page} usage=0x${e.usage.toRadixString(16).padLeft(4, '0').toUpperCase()}';
+  }
+}
+
+class _BtEntry {
+  final String page;  // 'C' یا 'K'
+  final int usage;
+  final String remoteKey;
+  const _BtEntry(this.page, this.usage, this.remoteKey);
+
+  Map<String, dynamic> toJson() => {
+    'page': page,
+    'usage': usage,
+    'remoteKey': remoteKey,
+  };
+
+  static _BtEntry fromJson(Map<String, dynamic> j) =>
+      _BtEntry(j['page'] as String, j['usage'] as int, j['remoteKey'] as String);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  مدل‌های داده
+// ════════════════════════════════════════════════════════════════════════
+
+/// یک رویداد کلید خام دریافتی از Kotlin
 class KeyEntry {
   final String time;
-  final String action;   // DOWN / UP
+  final String action;
   final int keyCode;
   final String keyName;
   final int scanCode;
@@ -56,8 +149,6 @@ class KeyEntry {
     required this.repeat,
   });
 
-  /// فرمت pipe-separated که از Kotlin می‌آید:
-  /// time|action|keyCode|keyName|scanCode|source|deviceId|deviceName|repeat
   static KeyEntry? tryParse(String raw) {
     final p = raw.split('|');
     if (p.length < 9) return null;
@@ -74,15 +165,11 @@ class KeyEntry {
     );
   }
 
-  /// آیا شبیه رویداد از دستگاه بلوتوث است؟
   bool get looksLikeBt =>
       deviceName.toLowerCase().contains('bluetooth') ||
       deviceName.toLowerCase().contains('hid') ||
       deviceName.contains('Keyboard') ||
       source.contains('KB');
-
-  /// کلید یکتا برای جدول نگاشت (keyCode + scanCode + deviceId)
-  String get mappingKey => '$keyCode:$scanCode:$deviceId';
 
   String toLogLine() =>
       '[$time] $action  code=$keyCode ($keyName)  '
@@ -92,10 +179,10 @@ class KeyEntry {
       '$time,$action,$keyCode,$keyName,$scanCode,$source,$deviceId,"$deviceName",$repeat';
 }
 
-// ── مدل رویداد بلوتوث ───────────────────────────────────────────────────────
+/// یک رویداد بلوتوث
 class BtEvent {
   final String time;
-  final String type;   // CONNECTED / DISCONNECTED / BOND
+  final String type;
   final String device;
   final String extra;
 
@@ -113,7 +200,109 @@ class BtEvent {
   }
 }
 
-// ── صفحه اصلی ───────────────────────────────────────────────────────────────
+/// یک نگاشت ضبط‌شده و پایدار (IR + BT همزمان)
+class RecordedMapping {
+  final int keyCode;
+  final String keyName;
+  final int scanCode;
+  final String source;
+  final String deviceName;
+  final String firstSeenTime;
+  final _BtEntry? btEntry;     // معادل BT HID — null اگر در جدول نباشد
+
+  const RecordedMapping({
+    required this.keyCode,
+    required this.keyName,
+    required this.scanCode,
+    required this.source,
+    required this.deviceName,
+    required this.firstSeenTime,
+    this.btEntry,
+  });
+
+  factory RecordedMapping.fromKeyEntry(KeyEntry e) => RecordedMapping(
+        keyCode: e.keyCode,
+        keyName: e.keyName,
+        scanCode: e.scanCode,
+        source: e.source,
+        deviceName: e.deviceName,
+        firstSeenTime: e.time,
+        btEntry: BtHidLookup.lookup(e.keyCode),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'keyCode': keyCode,
+        'keyName': keyName,
+        'scanCode': scanCode,
+        'source': source,
+        'deviceName': deviceName,
+        'firstSeenTime': firstSeenTime,
+        if (btEntry != null) 'bt': btEntry!.toJson(),
+      };
+
+  static RecordedMapping fromJson(Map<String, dynamic> j) => RecordedMapping(
+        keyCode: j['keyCode'] as int,
+        keyName: j['keyName'] as String,
+        scanCode: j['scanCode'] as int,
+        source: j['source'] as String,
+        deviceName: j['deviceName'] as String,
+        firstSeenTime: j['firstSeenTime'] as String,
+        btEntry: j['bt'] != null
+            ? _BtEntry.fromJson(j['bt'] as Map<String, dynamic>)
+            : null,
+      );
+
+  String get irLabel => 'code=$keyCode  scan=$scanCode  src=$source';
+  String get btLabel =>
+      btEntry != null
+          ? 'page=${btEntry!.page}  usage=0x${btEntry!.usage.toRadixString(16).padLeft(4, '0').toUpperCase()}  key="${btEntry!.remoteKey}"'
+          : 'در جدول نگاشت نیست';
+
+  String toShareRow() =>
+      '$keyName  |  code=$keyCode  scan=$scanCode  src=$source  '
+      '  BT:${btEntry != null ? "page=${btEntry!.page} usage=0x${btEntry!.usage.toRadixString(16).toUpperCase()}" : "ندارد"}'
+      '  dev="$deviceName"  t=$firstSeenTime';
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  لایه ذخیره‌ی دائمی
+// ════════════════════════════════════════════════════════════════════════
+class MappingStore {
+  static const _prefKey = 'recorded_mappings_v2';
+
+  static Future<List<RecordedMapping>> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefKey);
+      if (raw == null || raw.isEmpty) return [];
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list
+          .map((e) => RecordedMapping.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> save(List<RecordedMapping> mappings) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = jsonEncode(mappings.map((m) => m.toJson()).toList());
+      await prefs.setString(_prefKey, encoded);
+    } catch (_) {}
+  }
+
+  static Future<void> clear() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_prefKey);
+    } catch (_) {}
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  صفحه اصلی
+// ════════════════════════════════════════════════════════════════════════
 class DiagnosticScreen extends StatefulWidget {
   const DiagnosticScreen({super.key});
 
@@ -128,46 +317,133 @@ class _DiagnosticScreenState extends State<DiagnosticScreen>
 
   late final TabController _tabs;
 
-  // لاگ کامل
-  final List<KeyEntry> _keyLog = [];
-  final List<BtEvent>  _btLog  = [];
+  // لاگ خام
+  final List<KeyEntry> _keyLog  = [];
+  final List<BtEvent>  _btLog   = [];
 
-  // جدول نگاشت: فقط اولین DOWN هر (keyCode, scanCode, device) یکتا
-  final Map<String, KeyEntry> _mappingTable = {};
+  // نگاشت‌های ضبط‌شده — با فیلتر یکبار-برای-هر-keyCode
+  final Map<int, RecordedMapping> _mappings = {};  // keyCode → mapping
+  bool _loadingMappings = true;
 
-  // فیلترها
-  bool _showUpEvents = false;   // پیش‌فرض: فقط DOWN نشان بده
-  bool _showRepeat   = false;   // پیش‌فرض: تکرار پنهان
-
-  StreamSubscription? _keySub;
-  StreamSubscription? _btSub;
+  StreamSubscription<dynamic>? _keySub;
+  StreamSubscription<dynamic>? _btSub;
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
+    _loadSavedMappings();
+    _startListening();
+  }
 
-    _keySub = _keyChannel.receiveBroadcastStream().listen((raw) {
-      final entry = KeyEntry.tryParse(raw.toString());
-      if (entry == null) return;
-      setState(() {
-        _keyLog.insert(0, entry);
-        if (_keyLog.length > 1000) _keyLog.removeLast();
-        // جدول نگاشت: فقط اولین DOWN بدون تکرار
+  Future<void> _loadSavedMappings() async {
+    final saved = await MappingStore.load();
+    if (!mounted) return;
+    setState(() {
+      for (final m in saved) {
+        _mappings[m.keyCode] = m;
+      }
+      _loadingMappings = false;
+    });
+  }
+
+  void _startListening() {
+    _keySub = _keyChannel.receiveBroadcastStream().listen(
+      (raw) {
+        final entry = KeyEntry.tryParse(raw?.toString() ?? '');
+        if (entry == null) return;
+
+        // فقط رویداد DOWN را ضبط می‌کنیم (نه UP و نه تکرار)
         if (entry.action == 'DOWN' && entry.repeat == 0) {
-          _mappingTable.putIfAbsent(entry.mappingKey, () => entry);
+          _processNewKeyDown(entry);
         }
-      });
-    });
 
-    _btSub = _btChannel.receiveBroadcastStream().listen((raw) {
-      final ev = BtEvent.tryParse(raw.toString());
-      if (ev == null) return;
+        // لاگ خام همیشه ثبت می‌شود (اما تکرارها را نادیده می‌گیریم)
+        if (entry.repeat == 0) {
+          setState(() {
+            _keyLog.insert(0, entry);
+            if (_keyLog.length > 200) _keyLog.removeLast();
+          });
+        }
+      },
+      onError: (_) {},
+    );
+
+    _btSub = _btChannel.receiveBroadcastStream().listen(
+      (raw) {
+        final event = BtEvent.tryParse(raw?.toString() ?? '');
+        if (event == null) return;
+        setState(() {
+          _btLog.insert(0, event);
+          if (_btLog.length > 100) _btLog.removeLast();
+        });
+      },
+      onError: (_) {},
+    );
+  }
+
+  /// پردازش یک رویداد DOWN جدید: اگر تازه است → ذخیره + لرز
+  void _processNewKeyDown(KeyEntry entry) {
+    final isNew = !_mappings.containsKey(entry.keyCode);
+    if (isNew) {
+      final mapping = RecordedMapping.fromKeyEntry(entry);
       setState(() {
-        _btLog.insert(0, ev);
-        if (_btLog.length > 200) _btLog.removeLast();
+        _mappings[entry.keyCode] = mapping;
       });
-    });
+      // ذخیره فوری در حافظه دائمی
+      MappingStore.save(_mappings.values.toList());
+
+      // لرزش هنگام ضبط دکمه جدید
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  Future<void> _clearMappings() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('پاک کردن همه نگاشت‌ها؟',
+            style: TextStyle(color: Colors.white)),
+        content: const Text('این عملیات برگشت‌پذیر نیست.',
+            style: TextStyle(color: Color(0xFF888888))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('انصراف'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('پاک کن', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await MappingStore.clear();
+      setState(() => _mappings.clear());
+    }
+  }
+
+  Future<void> _shareMappings() async {
+    if (_mappings.isEmpty) return;
+    final lines = [
+      'نگاشت ضبط‌شده ریموت دوو — ${DateTime.now().toString().substring(0, 16)}',
+      '=' * 60,
+      ..._mappings.values
+          .toList()
+          .map((m) => m.toShareRow()),
+    ];
+    await Share.share(lines.join('\n'));
+  }
+
+  Future<void> _shareKeyLog() async {
+    if (_keyLog.isEmpty) return;
+    final csv = [
+      'time,action,keyCode,keyName,scanCode,source,deviceId,deviceName,repeat',
+      ..._keyLog.map((e) => e.toCsvRow()),
+    ].join('\n');
+    await Share.share(csv);
   }
 
   @override
@@ -178,481 +454,431 @@ class _DiagnosticScreenState extends State<DiagnosticScreen>
     super.dispose();
   }
 
-  // ── اشتراک‌گذاری ────────────────────────────────────────────────────────
-  Future<void> _shareLog() async {
-    final buf = StringBuffer('=== لاگ کامل کلیدها ===\n');
-    for (final e in _keyLog.reversed) {
-      buf.writeln(e.toLogLine());
-    }
-    buf.writeln('\n=== جدول نگاشت یکتا ===');
-    buf.writeln('keyCode,keyName,scanCode,source,deviceId,deviceName');
-    for (final e in _mappingTable.values) {
-      buf.writeln('${e.keyCode},${e.keyName},${e.scanCode},${e.source},${e.deviceId},"${e.deviceName}"');
-    }
-    await Share.share(buf.toString(), subject: 'نگاشت کلید ریموت دوو');
-  }
-
-  Future<void> _shareMappingCsv() async {
-    final buf = StringBuffer('keyCode,keyName,scanCode,source,deviceId,deviceName\n');
-    for (final e in _mappingTable.values) {
-      buf.writeln('${e.keyCode},${e.keyName},${e.scanCode},${e.source},${e.deviceId},"${e.deviceName}"');
-    }
-    await Share.share(buf.toString(), subject: 'جدول نگاشت HID دوو.csv');
-  }
-
-  void _clearAll() => setState(() {
-    _keyLog.clear();
-    _btLog.clear();
-    _mappingTable.clear();
-  });
-
-  // ── ساخت UI ─────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF111111),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('دیاگ ریموت دوو', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            Text(
-              '${_keyLog.length} رویداد  |  ${_mappingTable.length} کلید یکتا  |  ${_btLog.length} BT',
-              style: const TextStyle(fontSize: 11, color: Color(0xFF888888)),
+        backgroundColor: const Color(0xFF0A0A0A),
+        title: const Text('دیاگ ریموت دوو', style: TextStyle(fontSize: 16)),
+        centerTitle: true,
+        bottom: TabBar(
+          controller: _tabs,
+          tabs: [
+            Tab(
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.save_rounded, size: 16),
+                const SizedBox(width: 6),
+                Text('ضبط‌شده (${_mappings.length})'),
+              ]),
+            ),
+            Tab(
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.list_alt_rounded, size: 16),
+                const SizedBox(width: 6),
+                Text('لاگ (${_keyLog.length})'),
+              ]),
+            ),
+            Tab(
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.bluetooth_rounded, size: 16),
+                const SizedBox(width: 6),
+                Text('بلوتوث (${_btLog.length})'),
+              ]),
             ),
           ],
         ),
         actions: [
-          // فیلتر UP/DOWN
-          Tooltip(
-            message: _showUpEvents ? 'پنهان کردن UP' : 'نمایش UP',
-            child: IconButton(
-              icon: Icon(
-                _showUpEvents ? Icons.unfold_less : Icons.unfold_more,
-                color: _showUpEvents ? const Color(0xFF4FC3F7) : Colors.grey,
-              ),
-              onPressed: () => setState(() => _showUpEvents = !_showUpEvents),
-            ),
-          ),
-          Tooltip(
-            message: 'ارسال لاگ',
-            child: IconButton(icon: const Icon(Icons.ios_share), onPressed: _shareLog),
-          ),
-          Tooltip(
-            message: 'پاک کردن همه',
-            child: IconButton(icon: const Icon(Icons.delete_outline), onPressed: _clearAll),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            color: const Color(0xFF1A1A1A),
+            onSelected: (v) {
+              if (v == 'share_map')  _shareMappings();
+              if (v == 'share_log')  _shareKeyLog();
+              if (v == 'clear_map')  _clearMappings();
+              if (v == 'clear_log')  setState(() { _keyLog.clear(); _btLog.clear(); });
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'share_map',  child: Text('اشتراک نگاشت‌ها')),
+              PopupMenuItem(value: 'share_log',  child: Text('اشتراک لاگ CSV')),
+              PopupMenuDivider(),
+              PopupMenuItem(value: 'clear_map',  child: Text('پاک‌کردن نگاشت‌ها', style: TextStyle(color: Colors.red))),
+              PopupMenuItem(value: 'clear_log',  child: Text('پاک‌کردن لاگ', style: TextStyle(color: Colors.red))),
+            ],
           ),
         ],
-        bottom: TabBar(
-          controller: _tabs,
-          tabs: const [
-            Tab(text: '⌨️ لاگ کلیدها'),
-            Tab(text: '📊 جدول نگاشت'),
-            Tab(text: '📶 بلوتوث'),
-          ],
-        ),
       ),
       body: TabBarView(
         controller: _tabs,
         children: [
-          _buildKeyLog(),
-          _buildMappingTable(),
-          _buildBtLog(),
+          _MappingsTab(
+            mappings: _mappings.values.toList()
+              ..sort((a, b) => a.keyName.compareTo(b.keyName)),
+            loading: _loadingMappings,
+            onClear: _clearMappings,
+            onShare: _shareMappings,
+          ),
+          _KeyLogTab(entries: _keyLog, onShare: _shareKeyLog),
+          _BtTab(events: _btLog),
         ],
       ),
     );
   }
+}
 
-  // ── تب ۱: لاگ کامل کلیدها ───────────────────────────────────────────────
-  Widget _buildKeyLog() {
-    final entries = _keyLog.where((e) {
-      if (!_showUpEvents && e.action == 'UP') return false;
-      if (!_showRepeat && e.repeat > 0) return false;
-      return true;
-    }).toList();
+// ════════════════════════════════════════════════════════════════════════
+//  تب ۱: نگاشت‌های ضبط‌شده (ماندگار)
+// ════════════════════════════════════════════════════════════════════════
+class _MappingsTab extends StatelessWidget {
+  const _MappingsTab({
+    required this.mappings,
+    required this.loading,
+    required this.onClear,
+    required this.onShare,
+  });
 
-    if (entries.isEmpty) {
-      return _emptyHint(
-        '⌨️',
-        'منتظر ورودی...',
-        'دکمه‌های ریموت گوشی یا ریموت اصلی را بزنید.\n'
-        'هر کلیدی که تلویزیون دریافت کند اینجا ظاهر می‌شود.',
+  final List<RecordedMapping> mappings;
+  final bool loading;
+  final VoidCallback onClear;
+  final VoidCallback onShare;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (mappings.isEmpty) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.sensors_rounded, size: 48, color: Color(0xFF444444)),
+          const SizedBox(height: 16),
+          const Text(
+            'هنوز دکمه‌ای ضبط نشده',
+            style: TextStyle(color: Color(0xFF666666), fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'دکمه‌های ریموت فیزیکی را فشار دهید\nهر دکمه فقط یک‌بار ضبط می‌شود',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFF444444), fontSize: 13, height: 1.8),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF4FC3F7).withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF4FC3F7).withOpacity(0.2)),
+            ),
+            child: const Text(
+              'داده‌ها دائمی هستند — حتا بعد از خاموش شدن تلویزیون یا بستن اپ، نگاشت‌ها حفظ می‌شوند',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFF4FC3F7), fontSize: 12, height: 1.6),
+            ),
+          ),
+        ]),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(8),
-      itemCount: entries.length,
-      itemBuilder: (ctx, i) => _KeyEventTile(entry: entries[i]),
-    );
-  }
-
-  // ── تب ۲: جدول نگاشت یکتا ──────────────────────────────────────────────
-  Widget _buildMappingTable() {
-    final rows = _mappingTable.values.toList();
-
     return Column(
       children: [
-        // هدر راهنما
+        // راهنما
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          color: const Color(0xFF1A2A1A),
-          child: Row(
-            children: [
-              const Icon(Icons.info_outline, color: Color(0xFF81C784), size: 16),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'هر دکمه گوشی را یک‌بار بزنید — یکتاها اینجا جمع می‌شوند.',
-                  style: TextStyle(color: Color(0xFF81C784), fontSize: 12),
-                ),
-              ),
-              TextButton.icon(
-                icon: const Icon(Icons.download, size: 16),
-                label: const Text('CSV', style: TextStyle(fontSize: 12)),
-                style: TextButton.styleFrom(foregroundColor: const Color(0xFF4FC3F7)),
-                onPressed: rows.isEmpty ? null : _shareMappingCsv,
-              ),
-            ],
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF4FC3F7).withOpacity(0.07),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFF4FC3F7).withOpacity(0.18)),
           ),
-        ),
-        // هدر ستون‌ها
-        if (rows.isNotEmpty)
-          Container(
-            color: const Color(0xFF1A1A1A),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Row(
-              children: const [
-                Expanded(flex: 2, child: _ColHeader('کد اندروید')),
-                Expanded(flex: 3, child: _ColHeader('نام کلید')),
-                Expanded(flex: 2, child: _ColHeader('scanCode')),
-                Expanded(flex: 2, child: _ColHeader('منبع')),
-                Expanded(flex: 3, child: _ColHeader('دستگاه')),
-              ],
+          child: Row(children: [
+            const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF4FC3F7)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${mappings.length} دکمه ضبط‌شده — ماندگار در حافظه (حتا بعد از خاموشی)',
+                style: const TextStyle(color: Color(0xFF4FC3F7), fontSize: 12),
+              ),
             ),
-          ),
-        // ردیف‌ها
+          ]),
+        ),
+        // لیست
         Expanded(
-          child: rows.isEmpty
-              ? _emptyHint('📊', 'جدول خالی است',
-                  'هنوز هیچ دکمه‌ای زده نشده.\nبرو تب لاگ و دکمه‌ها را بزن.')
-              : ListView.separated(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  itemCount: rows.length,
-                  separatorBuilder: (_, __) =>
-                      const Divider(height: 1, color: Color(0xFF2A2A2A)),
-                  itemBuilder: (ctx, i) => _MappingRow(entry: rows[i]),
-                ),
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+            itemCount: mappings.length,
+            itemBuilder: (_, i) => _MappingCard(mappings[i]),
+          ),
         ),
       ],
     );
   }
+}
 
-  // ── تب ۳: رویدادهای بلوتوث ──────────────────────────────────────────────
-  Widget _buildBtLog() {
-    if (_btLog.isEmpty) {
-      return _emptyHint(
-        '📶',
-        'رویداد بلوتوثی نیامده',
-        'وقتی گوشی از طریق HID بلوتوث متصل یا قطع شود اینجا نشان داده می‌شود.',
+class _MappingCard extends StatelessWidget {
+  const _MappingCard(this.m);
+  final RecordedMapping m;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasBt = m.btEntry != null;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141414),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasBt
+              ? const Color(0xFF4FC3F7).withOpacity(0.35)
+              : const Color(0xFF333333),
+        ),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // ── سردستی: نام کلید + نشان BT ──────────────────────────────
+        Row(children: [
+          Expanded(
+            child: Text(
+              m.keyName,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15),
+            ),
+          ),
+          if (hasBt)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4FC3F7).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                m.btEntry!.remoteKey,
+                style: const TextStyle(
+                    color: Color(0xFF4FC3F7),
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold),
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFF444444).withOpacity(0.3),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text('بدون BT',
+                  style: TextStyle(color: Color(0xFF666666), fontSize: 11)),
+            ),
+        ]),
+        const SizedBox(height: 8),
+
+        // ── فرمت IR ───────────────────────────────────────────────────
+        _InfoRow(
+          icon: Icons.settings_remote_rounded,
+          label: 'IR',
+          value: 'keyCode=${m.keyCode}  scanCode=${m.scanCode}  src=${m.source}',
+          color: const Color(0xFFFFB74D),
+        ),
+        const SizedBox(height: 4),
+
+        // ── معادل بلوتوث ──────────────────────────────────────────────
+        _InfoRow(
+          icon: Icons.bluetooth_rounded,
+          label: 'BT HID',
+          value: hasBt
+              ? 'page=${m.btEntry!.page}  usage=0x${m.btEntry!.usage.toRadixString(16).padLeft(4, '0').toUpperCase()}'
+              : 'نگاشت بلوتوث یافت نشد',
+          color: hasBt
+              ? const Color(0xFF4FC3F7)
+              : const Color(0xFF555555),
+        ),
+        const SizedBox(height: 4),
+
+        // ── دستگاه + زمان ─────────────────────────────────────────────
+        Row(children: [
+          const Icon(Icons.devices_rounded, size: 12, color: Color(0xFF555555)),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              '${m.deviceName}   ${m.firstSeenTime}',
+              style: const TextStyle(color: Color(0xFF555555), fontSize: 11),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Icon(icon, size: 13, color: color),
+      const SizedBox(width: 5),
+      Text('$label: ',
+          style: TextStyle(
+              color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+      Expanded(
+        child: Text(value,
+            style: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 12),
+            overflow: TextOverflow.ellipsis),
+      ),
+    ]);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  تب ۲: لاگ خام
+// ════════════════════════════════════════════════════════════════════════
+class _KeyLogTab extends StatelessWidget {
+  const _KeyLogTab({required this.entries, required this.onShare});
+  final List<KeyEntry> entries;
+  final VoidCallback onShare;
+
+  @override
+  Widget build(BuildContext context) {
+    if (entries.isEmpty) {
+      return const Center(
+        child: Text('لاگ خالی است — دکمه‌ای فشار دهید',
+            style: TextStyle(color: Color(0xFF666666))),
       );
     }
     return ListView.builder(
       padding: const EdgeInsets.all(8),
-      itemCount: _btLog.length,
-      itemBuilder: (ctx, i) => _BtEventTile(event: _btLog[i]),
-    );
-  }
-
-  Widget _emptyHint(String icon, String title, String subtitle) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(icon, style: const TextStyle(fontSize: 48)),
-            const SizedBox(height: 16),
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFFCCCCCC))),
-            const SizedBox(height: 8),
-            Text(subtitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 14, color: Color(0xFF888888))),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── ردیف رویداد کلید در لاگ ─────────────────────────────────────────────────
-class _KeyEventTile extends StatelessWidget {
-  final KeyEntry entry;
-  const _KeyEventTile({required this.entry});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDown = entry.action == 'DOWN';
-    final isBt   = entry.looksLikeBt;
-    final accentColor = isBt ? const Color(0xFF4FC3F7) : const Color(0xFFFFB74D);
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFF141414),
-        borderRadius: BorderRadius.circular(6),
-        border: Border(left: BorderSide(color: accentColor, width: 3)),
-      ),
-      child: Row(
-        children: [
-          // آیکون DOWN/UP
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: isDown ? accentColor.withAlpha(40) : Colors.transparent,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Center(
-              child: Text(
-                isDown ? '▼' : '▲',
-                style: TextStyle(
-                  color: isDown ? accentColor : const Color(0xFF555555),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
+      itemCount: entries.length,
+      itemBuilder: (_, i) {
+        final e = entries[i];
+        final isNew = i == 0;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isNew
+                ? const Color(0xFF1A2A1A)
+                : const Color(0xFF121212),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isNew
+                  ? Colors.green.withOpacity(0.4)
+                  : const Color(0xFF222222),
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // خط اصلی: نام کلید + کدها
-                RichText(
-                  text: TextSpan(
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 15),
-                    children: [
-                      TextSpan(
-                        text: entry.keyName.replaceFirst('KEYCODE_', ''),
-                        style: TextStyle(
-                          color: isDown ? Colors.white : const Color(0xFF666666),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      TextSpan(
-                        text: '  #${entry.keyCode}',
-                        style: const TextStyle(color: Color(0xFF4FC3F7), fontSize: 13),
-                      ),
-                      TextSpan(
-                        text: '  scan=${entry.scanCode}',
-                        style: const TextStyle(color: Color(0xFFFFB74D), fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 3),
-                // خط دوم: دستگاه + زمان
-                Text(
-                  '${isBt ? "🔵 BT" : "🔴 IR/SYS"}  ${entry.deviceName}  [${entry.time}]',
-                  style: const TextStyle(
-                    color: Color(0xFF666666),
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ],
+          child: Row(children: [
+            Text(e.time,
+                style: const TextStyle(color: Color(0xFF555555), fontSize: 10)),
+            const SizedBox(width: 8),
+            Container(
+              width: 2, height: 32,
+              color: e.looksLikeBt
+                  ? const Color(0xFF4FC3F7)
+                  : const Color(0xFFFFB74D),
             ),
-          ),
-          // کپی
-          GestureDetector(
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: entry.toLogLine()));
-            },
-            child: const Icon(Icons.copy, size: 16, color: Color(0xFF444444)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── ردیف جدول نگاشت ──────────────────────────────────────────────────────────
-class _MappingRow extends StatelessWidget {
-  final KeyEntry entry;
-  const _MappingRow({required this.entry});
-
-  @override
-  Widget build(BuildContext context) {
-    final isBt = entry.looksLikeBt;
-    return GestureDetector(
-      onTap: () {
-        // کپی ردیف CSV با یک ضربه
-        Clipboard.setData(ClipboardData(
-          text: '${entry.keyCode},${entry.keyName},${entry.scanCode},${entry.source},${entry.deviceId},"${entry.deviceName}"',
-        ));
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('کپی شد'),
-            duration: Duration(milliseconds: 800),
-          ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(e.keyName,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold)),
+                    Text(
+                      'code=${e.keyCode}  scan=${e.scanCode}  src=${e.source}',
+                      style: const TextStyle(
+                          color: Color(0xFF666666), fontSize: 11),
+                    ),
+                  ]),
+            ),
+            Text(e.deviceName,
+                style: const TextStyle(color: Color(0xFF444444), fontSize: 10),
+                overflow: TextOverflow.ellipsis),
+          ]),
         );
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        color: Colors.transparent,
-        child: Row(
-          children: [
-            // keyCode
-            Expanded(
-              flex: 2,
-              child: Text(
-                '${entry.keyCode}',
-                style: TextStyle(
-                  color: isBt ? const Color(0xFF4FC3F7) : const Color(0xFFFFB74D),
-                  fontFamily: 'monospace',
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                ),
-              ),
-            ),
-            // keyName (بدون پیشوند KEYCODE_)
-            Expanded(
-              flex: 3,
-              child: Text(
-                entry.keyName.replaceFirst('KEYCODE_', ''),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontFamily: 'monospace',
-                  fontSize: 13,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            // scanCode
-            Expanded(
-              flex: 2,
-              child: Text(
-                '${entry.scanCode}\n0x${entry.scanCode.toRadixString(16).toUpperCase()}',
-                style: const TextStyle(
-                  color: Color(0xFFFFB74D),
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            // source
-            Expanded(
-              flex: 2,
-              child: Text(
-                entry.source,
-                style: const TextStyle(
-                  color: Color(0xFF888888),
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                ),
-              ),
-            ),
-            // deviceName (کوتاه)
-            Expanded(
-              flex: 3,
-              child: Row(
-                children: [
-                  Text(
-                    isBt ? '🔵' : '🔴',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      entry.deviceName,
-                      style: const TextStyle(
-                        color: Color(0xFF666666),
-                        fontSize: 11,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
 
-// ── ردیف رویداد بلوتوث ──────────────────────────────────────────────────────
-class _BtEventTile extends StatelessWidget {
-  final BtEvent event;
-  const _BtEventTile({required this.event});
+// ════════════════════════════════════════════════════════════════════════
+//  تب ۳: رویدادهای بلوتوث
+// ════════════════════════════════════════════════════════════════════════
+class _BtTab extends StatelessWidget {
+  const _BtTab({required this.events});
+  final List<BtEvent> events;
 
   @override
   Widget build(BuildContext context) {
-    final (icon, color) = switch (event.type) {
-      'CONNECTED'    => ('🔗', const Color(0xFF81C784)),
-      'DISCONNECTED' => ('❌', const Color(0xFFE57373)),
-      'BOND'         => ('🔄', const Color(0xFFFFB74D)),
-      _ => ('•', Colors.grey),
-    };
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF141414),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withAlpha(80)),
-      ),
-      child: Row(
-        children: [
-          Text(icon, style: const TextStyle(fontSize: 20)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${event.type}  ${event.extra}',
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                Text(
-                  'دستگاه: ${event.device}  [${event.time}]',
-                  style: const TextStyle(color: Color(0xFF666666), fontSize: 12),
-                ),
-              ],
-            ),
+    if (events.isEmpty) {
+      return const Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.bluetooth_disabled_rounded,
+              size: 48, color: Color(0xFF444444)),
+          SizedBox(height: 12),
+          Text('هنوز رویداد بلوتوثی دریافت نشده',
+              style: TextStyle(color: Color(0xFF666666))),
+        ]),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(8),
+      itemCount: events.length,
+      itemBuilder: (_, i) {
+        final e = events[i];
+        final (color, icon) = switch (e.type) {
+          'CONNECTED'    => (Colors.green, '🟢'),
+          'DISCONNECTED' => (Colors.red, '🔴'),
+          'BOND'         => (const Color(0xFF4FC3F7), '🔵'),
+          _              => (const Color(0xFF888888), '⚪'),
+        };
+        return Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: color.withAlpha(80)),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── هدر ستون جدول ───────────────────────────────────────────────────────────
-class _ColHeader extends StatelessWidget {
-  final String text;
-  const _ColHeader(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: const TextStyle(
-        color: Color(0xFF888888),
-        fontSize: 11,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 0.5,
-      ),
+          child: Row(children: [
+            Text(icon, style: const TextStyle(fontSize: 18)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${e.type}  ${e.extra}',
+                      style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14),
+                    ),
+                    Text(
+                      'دستگاه: ${e.device}  [${e.time}]',
+                      style: const TextStyle(
+                          color: Color(0xFF666666), fontSize: 12),
+                    ),
+                  ]),
+            ),
+          ]),
+        );
+      },
     );
   }
 }

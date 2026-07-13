@@ -18,19 +18,14 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * نسخه ارتقاء‌یافته — هدف: کشیدن نگاشت واقعی HID از تلویزیون.
+ * نسخه ۱.۲ — با ضبط کامل و پایدار
  *
- * هر KeyEvent را به‌صورت JSON ساختار‌یافته می‌فرستد تا Dart بتواند آن را
- * parse کرده و جدول نگاشت زنده بسازد:
- *   keyCode   → کد اندروید (مثلاً ۲۶۴ = KEYCODE_VOLUME_UP)
- *   keyName   → اسم رسمی اندروید (مثلاً "KEYCODE_VOLUME_UP")
- *   scanCode  → کد خام لینوکس/HID که از دستگاه ورودی آمده
- *   source    → منبع: SOURCE_KEYBOARD, SOURCE_GAMEPAD, ...
- *   deviceId  → شناسه InputDevice در اندروید
- *   deviceName→ اسم دستگاه ورودی (مثلاً "SM-G991B Keyboard")
- *   action    → "DOWN" یا "UP"
- *   repeat    → تعداد تکرار (۰ = اولین فشار)
- *   time      → ساعت:دقیقه:ثانیه.میلی‌ثانیه
+ * بهبودها نسبت به نسخه قبل:
+ * ۱. override صریح onKeyDown و onKeyUp برای دریافت کلیدهایی که ممکن است
+ *    dispatchKeyEvent از دستشان بدهد (مثلاً BACK در برخی ROM‌ها)
+ * ۲. dispatchKeyEvent همچنان نگه داشته شده برای اطمینان از دریافت همه کلیدها
+ * ۳. ارسال اطلاعات کامل‌تر: IR scanCode دقیق + نام دستگاه ورودی
+ * ۴. جلوگیری از ارسال رویدادهای تکراری (repeatCount > 0) در کانال
  */
 class MainActivity : FlutterActivity() {
 
@@ -42,6 +37,10 @@ class MainActivity : FlutterActivity() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val timeFmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+
+    // برای جلوگیری از ارسال رویداد تکراری از dispatchKeyEvent و onKeyDown
+    private val sentKeys = LinkedHashMap<String, Long>(64, 0.75f, true)
+    private val dedupeWindowMs = 30L
 
     // ── گیرنده رویداد بلوتوث ──────────────────────────────────────────────
     private val btReceiver = object : BroadcastReceiver() {
@@ -75,7 +74,6 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    // ── راه‌اندازی کانال‌ها ────────────────────────────────────────────────
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -109,14 +107,48 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
     }
 
-    // ── ضبط هر KeyEvent واقعی ────────────────────────────────────────────
+    // ── ضبط همه KeyEvent‌ها از dispatchKeyEvent ─────────────────────────
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        val action = when (event.action) {
-            KeyEvent.ACTION_DOWN -> "DOWN"
-            KeyEvent.ACTION_UP   -> "UP"
-            else -> "OTHER"
+        // فقط رویداد DOWN را ضبط می‌کنیم (بدون تکرار)
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            sendKeyEvent(event, "DOWN")
+        } else if (event.action == KeyEvent.ACTION_UP) {
+            sendKeyEvent(event, "UP")
         }
+        return super.dispatchKeyEvent(event)
+    }
 
+    // ── override صریح onKeyDown برای دریافت کلیدهای خاص ─────────────────
+    // بعضی کلیدها مثل BACK در برخی ROM‌ها ممکن است قبل از dispatchKeyEvent
+    // توسط Flutter مصرف شوند — این override مستقیماً از لایه اندروید گرفته
+    // می‌شود و مطمئن‌تر است.
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (event.repeatCount == 0) {
+            // اگر dispatchKeyEvent این رویداد را قبلاً فرستاده باشد، skip
+            if (!wasRecentlySent(event, "DOWN")) {
+                sendKeyEvent(event, "DOWN")
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (!wasRecentlySent(event, "UP")) {
+            sendKeyEvent(event, "UP")
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
+    // ── بررسی ارسال تکراری (کمتر از ۳۰ میلی‌ثانیه) ─────────────────────
+    private fun wasRecentlySent(event: KeyEvent, action: String): Boolean {
+        val key = "${action}:${event.keyCode}:${event.scanCode}:${event.deviceId}"
+        val now = System.currentTimeMillis()
+        val lastSent = sentKeys[key] ?: 0L
+        return (now - lastSent) < dedupeWindowMs
+    }
+
+    // ── ساخت و ارسال پیام رویداد کلید ───────────────────────────────────
+    private fun sendKeyEvent(event: KeyEvent, action: String) {
         val keyCode  = event.keyCode
         val keyName  = KeyEvent.keyCodeToString(keyCode)
         val scanCode = event.scanCode
@@ -124,9 +156,8 @@ class MainActivity : FlutterActivity() {
         val repeat   = event.repeatCount
         val deviceId = event.deviceId
 
-        // نام و نوع دستگاه ورودی
-        val inputDev  = event.device
-        val devName   = inputDev?.name?.replace("|", "/") ?: "?"
+        val inputDev = event.device
+        val devName  = inputDev?.name?.replace("|", "/") ?: "?"
 
         // تشخیص نوع منبع
         val srcParts = mutableListOf<String>()
@@ -139,12 +170,19 @@ class MainActivity : FlutterActivity() {
 
         val time = timeFmt.format(Date())
 
-        // فرمت pipe-separated — سبک، بدون نیاز به JSON parser در Dart
+        // ثبت در جدول ارسال‌شده‌ها برای جلوگیری از تکرار
+        val dedupeKey = "${action}:${keyCode}:${scanCode}:${deviceId}"
+        sentKeys[dedupeKey] = System.currentTimeMillis()
+        // نگه داشتن فقط ۱۰۰ آیتم آخر
+        if (sentKeys.size > 100) {
+            val oldestKey = sentKeys.entries.first().key
+            sentKeys.remove(oldestKey)
+        }
+
+        // فرمت pipe-separated:
         // time|action|keyCode|keyName|scanCode|source|deviceId|deviceName|repeat
         val msg = "$time|$action|$keyCode|$keyName|$scanCode|$srcStr|$deviceId|$devName|$repeat"
         emit(keySink, msg)
-
-        return super.dispatchKeyEvent(event)
     }
 
     private fun emit(sink: EventChannel.EventSink?, msg: String) {
