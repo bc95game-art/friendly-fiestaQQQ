@@ -1,0 +1,24 @@
+name: daewoo_tv_diagnostic
+description: "ابزار تشخیصی روی خودِ تلویزیون — نمایش زنده‌ی کلیدهای واقعی دریافتی و وضعیت اتصال بلوتوث، برای دیباگ ریموت هوشمند دوو."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # اشتراک‌گذاری لاگ متنی از طریق هر اپی که روی تلویزیون نصب است
+  # (جیمیل، تلگرام، درایو و ...) تا کاربر بتواند خروجی را برای توسعه‌دهنده بفرستد.
+  share_plus: ^10.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

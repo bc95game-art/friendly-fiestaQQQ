@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  اپ تشخیصی مخصوص خودِ تلویزیون (Android TV). فقط برای دیباگ ساخته شده:
+  هر KeyEvent واقعی که به سیستم می‌رسد (چه از مادون‌قرمز ریموت اصلی، چه از
+  گزارش‌های HID بلوتوثی اپ گوشی) و هر تغییر وضعیت اتصال بلوتوث را همان لحظه
+  روی صفحه نشان می‌دهد تا به‌جای حدس زدن از بیرون، مستقیم رفتار واقعی
+  سخت‌افزار تلویزیون دیده شود.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="ali.khaleghi.tvdiagnostic">
+
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <application
+        android:label="دیاگ ریموت دوو (TV)"
+        android:icon="@mipmap/ic_launcher"
+        android:banner="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+            <!-- هم به‌عنوان اپ عادی و هم در لانچر مخصوص Android TV (Leanback)
+                 قابل دیدن/اجرا باشد، چون بعضی جعبه‌های تلویزیون فقط لانچر
+                 Leanback را نشان می‌دهند. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+</manifest>

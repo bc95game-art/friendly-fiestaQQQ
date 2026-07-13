@@ -20,6 +20,22 @@ android/*.jks
 android/app/*.ap_
 android/app/*.apk
 
+# TV diagnostic sub-project (پروژه‌ی فلاتر جدا، همان قوانین را تکرار می‌کند)
+tv_diagnostic/.dart_tool/
+tv_diagnostic/.flutter-plugins
+tv_diagnostic/.flutter-plugins-dependencies
+tv_diagnostic/.packages
+tv_diagnostic/build/
+tv_diagnostic/android/local.properties
+tv_diagnostic/android/.gradle
+tv_diagnostic/android/captures/
+tv_diagnostic/android/gradlew
+tv_diagnostic/android/gradlew.bat
+tv_diagnostic/android/key.properties
+tv_diagnostic/android/*.jks
+tv_diagnostic/android/app/*.ap_
+tv_diagnostic/android/app/*.apk
+
 # IDE
 .idea/
 .vscode/
