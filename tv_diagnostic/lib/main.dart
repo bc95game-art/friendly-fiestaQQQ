@@ -21,7 +21,7 @@ class TvDiagnosticApp extends StatelessWidget {
           secondary: const Color(0xFFFFB74D),
           surface: const Color(0xFF1A1A1A),
         ),
-        tabBarTheme: const TabBarThemeData(
+        tabBarTheme: const TabBarTheme(
           labelColor: Color(0xFF4FC3F7),
           unselectedLabelColor: Color(0xFF888888),
           indicatorColor: Color(0xFF4FC3F7),
