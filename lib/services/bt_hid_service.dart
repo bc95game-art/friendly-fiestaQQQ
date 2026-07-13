@@ -68,21 +68,36 @@ class BtHidService {
   void _ensureListening() {
     if (_listening) return;
     _listening = true;
-    _events.receiveBroadcastStream().listen((event) {
-      switch (event as String) {
-        case 'connected':
-          _emit(BtConnState.connected);
-          break;
-        case 'connecting':
-          _emit(BtConnState.connecting);
-          break;
-        case 'disconnected':
-          _emit(BtConnState.disconnected);
-          break;
-        default:
-          _emit(BtConnState.error);
-      }
-    });
+    _events.receiveBroadcastStream().listen(
+      (event) {
+        switch (event?.toString()) {
+          case 'connected':
+            _emit(BtConnState.connected);
+            break;
+          case 'connecting':
+            _emit(BtConnState.connecting);
+            break;
+          case 'disconnected':
+            _emit(BtConnState.disconnected);
+            break;
+          default:
+            _emit(BtConnState.error);
+        }
+      },
+      // ⚠️ رفع باگ: اگر EventChannel stream خطا بدهد یا ببندد، listener
+      // بدون این handler‌ها می‌مرد و _listening=true باقی می‌ماند — پس
+      // _ensureListening دیگر هرگز listener جدید نمی‌ساخت و هیچ وضعیت
+      // BT دریافت نمی‌شد. با ریست _listening، دفعه بعد که _ensureListening
+      // صدا زده شود یک listener تازه ساخته می‌شود.
+      onError: (_) {
+        _listening = false;
+        _emit(BtConnState.error);
+      },
+      onDone: () {
+        _listening = false;
+        _emit(BtConnState.disconnected);
+      },
+    );
   }
 
   /// این گوشی را به‌عنوان دستگاه HID بلوتوثی نزد سیستم‌عامل ثبت می‌کند.

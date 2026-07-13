@@ -47,6 +47,11 @@ class MainActivity : FlutterActivity() {
     private var connectedDevice: BluetoothDevice? = null
     private var registered = false
     private var hidEventSink: EventChannel.EventSink? = null
+    // ⚠️ رفع باگ mouse-click race: اگر کاربر سریع کلیک کند، postDelayed قبلی
+    // هنوز در صف است و وقتی فایر می‌شود button را آزاد می‌کند در حالی که
+    // کلیک جدید در حال ارسال است. این Runnable مرجع آزادسازی معلق را نگه
+    // می‌دارد تا قبل از هر کلیک جدید کنسل شود.
+    private var pendingMouseRelease: Runnable? = null
 
     // ⚠️ رفع باگ «اتصال بعد از رفتن و برگشت به صفحه/بعد از قطع، تا ری‌استارت
     // کامل اپ برقرار نمی‌شود»: قبلاً هر بار Dart سمت initState دوباره
@@ -512,8 +517,12 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun sendMouseClick(): Boolean {
+        // کنسل کردن release معلق قبلی تا با button-down جدید تداخل نداشته باشد
+        pendingMouseRelease?.let { mainHandler.removeCallbacks(it) }
         val down = sendMouseReport(1, 0, 0)
-        mainHandler.postDelayed({ sendMouseReport(0, 0, 0) }, RELEASE_DELAY_MS)
+        val release = Runnable { sendMouseReport(0, 0, 0) }
+        pendingMouseRelease = release
+        mainHandler.postDelayed(release, RELEASE_DELAY_MS)
         return down
     }
 }
