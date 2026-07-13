@@ -422,7 +422,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
               ),
               Expanded(
                 child: widget.size == RemoteSize.large
-                    ? _LargeRemote(accent: accent, mode: widget.mode, onPress: _press)
+                    ? _LargeRemote(accent: accent, onPress: _press)
                     : _SmallRemote(
                         accent: accent, mode: widget.mode, onPress: _press),
               ),
@@ -478,9 +478,8 @@ class _AlternativeConnectionBanner extends StatelessWidget {
 //  کنترل بزرگ — تمام دکمه‌ها طبق طرح HTML مرجع
 // ════════════════════════════════════════════════════════════════════════
 class _LargeRemote extends StatelessWidget {
-  const _LargeRemote({required this.accent, required this.mode, required this.onPress});
+  const _LargeRemote({required this.accent, required this.onPress});
   final Color accent;
-  final RemoteMode mode;
   final void Function(String) onPress;
 
   @override
@@ -723,17 +722,14 @@ class _LargeRemote extends StatelessWidget {
         const SizedBox(height: 8),
 
         // ── ردیف: Text / Audio / Subtitle ────────────────────────────────
-        // TEXT در BT: Android TV از Teletext پشتیبانی نمی‌کند (Generic.kl
-        // این کد را comment‌شده دارد) — فقط از طریق IR سخت‌افزاری کار
-        // می‌کند. دکمه غیرفعال با برچسب «فقط IR» نشان داده می‌شود.
         Row(
           children: [
             Expanded(
-              child: _irOnlyInBt(
-                mode: mode,
+              child: RemoteButton(
+                shape: RemoteButtonShape.tiny,
                 label: 'TEXT',
-                icon: Icons.article_outlined,
                 onTap: () => onPress('text'),
+                child: const Icon(Icons.article_outlined, size: 16),
               ),
             ),
             const SizedBox(width: 8),
@@ -759,17 +755,14 @@ class _LargeRemote extends StatelessWidget {
         const SizedBox(height: 8),
 
         // ── ردیف: Radio / Zoom / Shift ───────────────────────────────────
-        // RADIO و SHIFT در BT: توابع سخت‌افزاری فرم‌ور TV هستند — Android
-        // هیچ HID Consumer code‌ای برای آنها نمی‌پذیرد (Generic.kl
-        // comment‌شده). فقط از مسیر IR فیزیکی قابل ارسالند.
         Row(
           children: [
             Expanded(
-              child: _irOnlyInBt(
-                mode: mode,
+              child: RemoteButton(
+                shape: RemoteButtonShape.tiny,
                 label: 'RADIO',
-                icon: Icons.radio_rounded,
                 onTap: () => onPress('radio'),
+                child: const Icon(Icons.radio_rounded, size: 16),
               ),
             ),
             const SizedBox(width: 8),
@@ -783,11 +776,11 @@ class _LargeRemote extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: _irOnlyInBt(
-                mode: mode,
+              child: RemoteButton(
+                shape: RemoteButtonShape.tiny,
                 label: 'SHIFT',
-                icon: Icons.keyboard_capslock_rounded,
                 onTap: () => onPress('shift'),
+                child: const Icon(Icons.keyboard_capslock_rounded, size: 16),
               ),
             ),
           ],
@@ -796,47 +789,6 @@ class _LargeRemote extends StatelessWidget {
       ],
     );
   }
-}
-
-/// دکمه‌ای که در حالت BT فقط IR است:
-/// — در IR: دکمه معمولی (کاملاً فعال)
-/// — در BT: دکمه با opacity کم + برچسب «IR» + غیر قابل کلیک
-/// این به کاربر می‌گوید باید برای این عملکرد به حالت IR سوئیچ کند.
-Widget _irOnlyInBt({
-  required RemoteMode mode,
-  required String label,
-  required IconData icon,
-  required VoidCallback onTap,
-}) {
-  final bool isBt = mode.isBluetooth;
-  return Stack(
-    alignment: Alignment.topRight,
-    children: [
-      RemoteButton(
-        shape: RemoteButtonShape.tiny,
-        label: label,
-        disabled: isBt,
-        onTap: isBt ? () {} : onTap,
-        child: Icon(icon, size: 16),
-      ),
-      if (isBt)
-        Positioned(
-          top: 2,
-          right: 2,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-            decoration: BoxDecoration(
-              color: AppColors.text2.withOpacity(0.75),
-              borderRadius: BorderRadius.circular(3),
-            ),
-            child: const Text(
-              'IR',
-              style: TextStyle(fontSize: 7, color: Colors.black87, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-    ],
-  );
 }
 
 // ════════════════════════════════════════════════════════════════════════

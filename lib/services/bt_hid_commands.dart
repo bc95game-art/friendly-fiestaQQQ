@@ -92,12 +92,21 @@ class BtHidCommands {
     // HID Consumer 0x0089 = «Media Select TV» → KEYCODE_TV_INPUT در Android TV
     // که دیالوگ «انتخاب منبع ورودی» (HDMI1/HDMI2/...) را باز می‌کند.
     'source': BtHidCommand(true, 0x0089),
+    // ── دکمه‌های تقریبی BT ─────────────────────────────────────────────────
+    // کدهای زیر در استاندارد HID Consumer معادل دقیقی ندارند ولی نزدیک‌ترین
+    // معادل موجود هستند — شاید روی این TV کار کنند:
+    //
+    // • text (تلتکست): HID Consumer 0x0174 — در محدوده «Application Launch»
+    //   نگاشت می‌شود؛ معادل دقیق وجود ندارد اما این کد در رنج مجاز است.
+    //
+    // • radio: HID Consumer 0x0085 = Media Select TV — در hid-input.c به
+    //   KEY_TV نگاشت می‌شود؛ ممکن است حالت تیونر/آنتن TV را فعال کند.
+    //
+    // • shift: Keyboard page 0xE1 = Left Shift keycode — یک ضربه‌ی کلید
+    //   Shift می‌فرستد؛ معادل دقیق Shift دوو (کلید ثانویه اعداد) نیست
+    //   ولی شاید در برخی حالت‌های ورودی متن مفید باشد.
+    'text': BtHidCommand(true, 0x0174),
+    'radio': BtHidCommand(true, 0x0085),
+    'shift': BtHidCommand(false, 0xE1),
   };
-
-  /// دکمه‌هایی که در حالت BT فیزیکاً غیرممکن هستند — فقط از طریق IR
-  /// به سخت‌افزار TV دسترسی دارند و Android TV آنها را از BT HID نمی‌پذیرد.
-  /// در Android Generic.kl این کدها (#key 385 KEY_RADIO / #key 388 KEY_TEXT)
-  /// comment‌شده‌اند یعنی هیچ HID Consumer code‌ای به آنها نگاشت نمی‌شود.
-  /// UI در حالت BT این دکمه‌ها را با برچسب «فقط IR» غیرفعال نشان می‌دهد.
-  static const Set<String> irOnlyKeys = {'text', 'radio', 'shift'};
 }
