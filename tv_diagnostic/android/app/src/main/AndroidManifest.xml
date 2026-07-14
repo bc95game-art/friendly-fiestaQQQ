@@ -48,6 +48,24 @@
             </intent-filter>
         </activity>
 
+        <!--
+          سرویس اختیاری برای گرفتن دکمه‌های سیستمی (HOME، ولوم، بی‌صدا) که
+          اندروید قبل از رسیدن به هر اپ عادی مصرف می‌کند. کاربر باید آن را
+          دستی از تنظیمات > دسترسی‌پذیری فعال کند — به‌صورت پیش‌فرض غیرفعال است.
+        -->
+        <service
+            android:name=".KeyAccessibilityService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:label="دیاگ ریموت دوو — تشخیص دکمه‌های سیستمی">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

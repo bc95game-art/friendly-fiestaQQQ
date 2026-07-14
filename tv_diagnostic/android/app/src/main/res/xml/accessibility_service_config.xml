@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  پیکربندی سرویس دسترسی‌پذیریِ اختیاری برای گرفتن دکمه‌های سیستمی
+  (HOME، VOLUME_UP/DOWN، MUTE و مشابه) که اندروید معمولاً قبل از رسیدن
+  به هر اپ عادی — از جمله همین اپ دیاگ — آن‌ها را مصرف می‌کند.
+  کاربر باید این سرویس را دستی از تنظیمات > دسترسی‌پذیری فعال کند.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeAllMask"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRequestFilterKeyEvents"
+    android:canRequestFilterKeyEvents="true"
+    android:notificationTimeout="0"
+    android:description="@string/accessibility_service_description" />

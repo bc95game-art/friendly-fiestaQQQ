@@ -176,6 +176,68 @@ class BtHidLookup {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+//  فهرست کامل توابع استاندارد ریموت — برای انتخاب دستیِ کد بلوتوث
+//
+//  چرا لازم است؟ بعضی دکمه‌های فیزیکیِ ریموت (مثل EXIT، RADIO، ZOOM، TEXT،
+//  AUDIO، SUB.T روی این ریموت خاص) یک اسکن‌کد اختصاصیِ همان برند/مدل تلویزیون
+//  تولید می‌کنند که در جدول‌های بالا (که فقط کدهای رایج لینوکس/اندروید را
+//  پوشش می‌دهند) وجود ندارد. در این حالت دکمه با موفقیت به‌عنوان IR ضبط
+//  می‌شود، اما نگاشت خودکار بلوتوث برایش پیدا نمی‌شود. تنها راه، دانستنِ
+//  عملکرد واقعیِ دکمه (توسط کسی که آن را فشار می‌دهد) و انتخاب دستیِ معادل
+//  آن از این فهرست است — که سپس برای همیشه ذخیره می‌شود.
+// ════════════════════════════════════════════════════════════════════════
+const List<_BtEntry> _manualBtChoices = [
+  _BtEntry('C', 0x0030, 'power'),
+  _BtEntry('C', 0x00E2, 'mute'),
+  _BtEntry('C', 0x00E9, 'vol_up'),
+  _BtEntry('C', 0x00EA, 'vol_down'),
+  _BtEntry('C', 0x009C, 'ch_up'),
+  _BtEntry('C', 0x009D, 'ch_down'),
+  _BtEntry('C', 0x0223, 'home'),
+  _BtEntry('C', 0x0224, 'back'),
+  _BtEntry('C', 0x0040, 'menu'),
+  _BtEntry('C', 0x0046, 'exit'),
+  _BtEntry('K', 0x28, 'ok'),
+  _BtEntry('K', 0x52, 'up'),
+  _BtEntry('K', 0x51, 'down'),
+  _BtEntry('K', 0x50, 'left'),
+  _BtEntry('K', 0x4F, 'right'),
+  _BtEntry('K', 0x28, 'return'),
+  _BtEntry('C', 0x00CD, 'play_pause'),
+  _BtEntry('C', 0x00B0, 'play'),
+  _BtEntry('C', 0x00B1, 'pause'),
+  _BtEntry('C', 0x00B7, 'stop'),
+  _BtEntry('C', 0x00B4, 'rewind'),
+  _BtEntry('C', 0x00B3, 'forward'),
+  _BtEntry('C', 0x00B5, 'next'),
+  _BtEntry('C', 0x00B6, 'prev'),
+  _BtEntry('C', 0x00B2, 'record'),
+  _BtEntry('C', 0x0060, 'info'),
+  _BtEntry('C', 0x0061, 'subtitle'),
+  _BtEntry('C', 0x008D, 'epg'),
+  _BtEntry('C', 0x0232, 'zoom'),
+  _BtEntry('C', 0x0160, 'text'),
+  _BtEntry('C', 0x0069, 'color_red'),
+  _BtEntry('C', 0x006A, 'color_green'),
+  _BtEntry('C', 0x006B, 'color_yellow'),
+  _BtEntry('C', 0x006C, 'color_blue'),
+  _BtEntry('C', 0x0089, 'source'),
+  _BtEntry('C', 0x0173, 'audio_track'),
+  _BtEntry('C', 0x008D, 'radio'),
+  _BtEntry('C', 0x0029, 'shift'),
+  _BtEntry('K', 0x1E, 'num_1'),
+  _BtEntry('K', 0x1F, 'num_2'),
+  _BtEntry('K', 0x20, 'num_3'),
+  _BtEntry('K', 0x21, 'num_4'),
+  _BtEntry('K', 0x22, 'num_5'),
+  _BtEntry('K', 0x23, 'num_6'),
+  _BtEntry('K', 0x24, 'num_7'),
+  _BtEntry('K', 0x25, 'num_8'),
+  _BtEntry('K', 0x26, 'num_9'),
+  _BtEntry('K', 0x27, 'num_0'),
+];
+
 class _BtEntry {
   final String page;  // 'C' یا 'K'
   final int usage;
@@ -341,6 +403,17 @@ class RecordedMapping {
       '  dev="$deviceName"  t=$firstSeenTime';
 }
 
+/// کلید یکتای نگاشت — بر اساس ترکیب keyCode+scanCode، نه فقط keyCode.
+///
+/// چرا؟ دکمه‌هایی که اندروید نمی‌تواند بشناسد همه با keyCode=0
+/// (KEYCODE_UNKNOWN) گزارش می‌شوند، اما scanCode واقعی‌شان با هم فرق دارد
+/// (هر دکمه‌ی فیزیکی روی ریموت یک scanCode خاص خودش را می‌فرستد). اگر فقط
+/// از keyCode به‌عنوان کلید استفاده می‌شد، دومین دکمه‌ی «ناشناخته» که فشار
+/// داده می‌شد اصلاً ثبت نمی‌شد — چون از نظر برنامه، keyCode آن (=۰) از قبل
+/// «ضبط‌شده» به‌حساب می‌آمد. همین چیزی بود که باعث می‌شد چند دکمه‌ی فیزیکیِ
+/// متفاوت روی ریموت، هرگز در تب «ضبط‌شده» ظاهر نشوند.
+String _mapKey(int keyCode, int scanCode) => '${keyCode}_$scanCode';
+
 // ════════════════════════════════════════════════════════════════════════
 //  دکمه‌های سیستمی از پیش تعریف‌شده
 //  این دکمه‌ها را سیستم اندروید قبل از رسیدن به اپ می‌گیرد:
@@ -417,9 +490,13 @@ class _DiagnosticScreenState extends State<DiagnosticScreen>
   final List<KeyEntry> _keyLog  = [];
   final List<BtEvent>  _btLog   = [];
 
-  // نگاشت‌های ضبط‌شده — با فیلتر یکبار-برای-هر-keyCode
-  final Map<int, RecordedMapping> _mappings = {};  // keyCode → mapping
+  // نگاشت‌های ضبط‌شده — با فیلتر یکبار-برای-هر-دکمه (کلید = keyCode+scanCode)
+  final Map<String, RecordedMapping> _mappings = {};
   bool _loadingMappings = true;
+
+  // وضعیت سرویس دسترسی‌پذیری (برای گرفتن HOME/VOLUME/MUTE واقعی)
+  static const _a11yChannel = MethodChannel('daewoo_tv_diag/a11y');
+  bool _a11yEnabled = false;
 
   StreamSubscription<dynamic>? _keySub;
   StreamSubscription<dynamic>? _btSub;
@@ -430,6 +507,7 @@ class _DiagnosticScreenState extends State<DiagnosticScreen>
     _tabs = TabController(length: 3, vsync: this);
     _loadSavedMappings();
     _startListening();
+    _checkA11yStatus();
   }
 
   Future<void> _loadSavedMappings() async {
@@ -437,13 +515,35 @@ class _DiagnosticScreenState extends State<DiagnosticScreen>
     if (!mounted) return;
     setState(() {
       // اول دکمه‌های سیستمی ثابت را اضافه کن
-      _mappings.addAll(_builtInSystemButtons);
+      for (final m in _builtInSystemButtons.values) {
+        _mappings[_mapKey(m.keyCode, m.scanCode)] = m;
+      }
       // سپس دکمه‌های ضبط‌شده (اگر capture شدند جایگزین می‌شوند)
       for (final m in saved) {
-        _mappings[m.keyCode] = m;
+        _mappings[_mapKey(m.keyCode, m.scanCode)] = m;
       }
       _loadingMappings = false;
     });
+  }
+
+  /// آیا کاربر سرویس دسترسی‌پذیری را برای گرفتن دکمه‌های سیستمی
+  /// (HOME واقعی، VOLUME، MUTE) فعال کرده است؟
+  Future<void> _checkA11yStatus() async {
+    try {
+      final enabled = await _a11yChannel.invokeMethod<bool>('isEnabled') ?? false;
+      if (!mounted) return;
+      setState(() => _a11yEnabled = enabled);
+    } catch (_) {}
+  }
+
+  Future<void> _openA11ySettings() async {
+    try {
+      await _a11yChannel.invokeMethod('openSettings');
+    } catch (_) {}
+    // کاربر باید خودش سرویس را در آن صفحه فعال کند؛ چند لحظه بعد از
+    // برگشت به اپ وضعیت را دوباره بررسی می‌کنیم (در didChangeAppLifecycleState
+    // نیست، پس فقط با یک تأخیر کوتاه یک‌بار دوباره چک می‌کنیم).
+    Future.delayed(const Duration(seconds: 2), _checkA11yStatus);
   }
 
   void _startListening() {
@@ -498,11 +598,12 @@ class _DiagnosticScreenState extends State<DiagnosticScreen>
 
   /// پردازش یک رویداد DOWN جدید: اگر تازه است → ذخیره + لرز
   void _processNewKeyDown(KeyEntry entry) {
-    final isNew = !_mappings.containsKey(entry.keyCode);
+    final key = _mapKey(entry.keyCode, entry.scanCode);
+    final isNew = !_mappings.containsKey(key);
     if (isNew) {
       final mapping = RecordedMapping.fromKeyEntry(entry);
       setState(() {
-        _mappings[entry.keyCode] = mapping;
+        _mappings[key] = mapping;
       });
       // ذخیره فوری در حافظه دائمی
       MappingStore.save(_mappings.values.toList());
@@ -510,6 +611,32 @@ class _DiagnosticScreenState extends State<DiagnosticScreen>
       // لرزش هنگام ضبط دکمه جدید
       HapticFeedback.mediumImpact();
     }
+  }
+
+  /// نسبت‌دادن دستیِ کد بلوتوث به یک دکمه که نگاشت خودکار برایش پیدا نشد.
+  void _assignManualBt(RecordedMapping m, _BtEntry entry) {
+    final key = _mapKey(m.keyCode, m.scanCode);
+    final updated = RecordedMapping(
+      keyCode: m.keyCode,
+      keyName: m.keyName,
+      scanCode: m.scanCode,
+      source: m.source,
+      deviceName: m.deviceName,
+      firstSeenTime: m.firstSeenTime,
+      btEntry: entry,
+      isSystemButton: m.isSystemButton,
+    );
+    setState(() {
+      _mappings[key] = updated;
+    });
+    MappingStore.save(_mappings.values.toList());
+    HapticFeedback.lightImpact();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('کد بلوتوث «${entry.remoteKey}» به «${m.keyName}» نسبت داده شد ✓'),
+      duration: const Duration(seconds: 2),
+      backgroundColor: const Color(0xFF1A2A1A),
+    ));
   }
 
   Future<void> _clearMappings() async {
@@ -538,7 +665,9 @@ class _DiagnosticScreenState extends State<DiagnosticScreen>
       setState(() {
         _mappings.clear();
         // دکمه‌های سیستمی همیشه باید باقی بمانند
-        _mappings.addAll(_builtInSystemButtons);
+        for (final m in _builtInSystemButtons.values) {
+          _mappings[_mapKey(m.keyCode, m.scanCode)] = m;
+        }
       });
     }
   }
@@ -634,6 +763,9 @@ class _DiagnosticScreenState extends State<DiagnosticScreen>
             loading: _loadingMappings,
             onClear: _clearMappings,
             onShare: _shareMappings,
+            onAssign: _assignManualBt,
+            a11yEnabled: _a11yEnabled,
+            onOpenA11ySettings: _openA11ySettings,
           ),
           _KeyLogTab(entries: _keyLog, onShare: _shareKeyLog),
           _BtTab(events: _btLog),
@@ -652,12 +784,18 @@ class _MappingsTab extends StatelessWidget {
     required this.loading,
     required this.onClear,
     required this.onShare,
+    required this.onAssign,
+    required this.a11yEnabled,
+    required this.onOpenA11ySettings,
   });
 
   final List<RecordedMapping> mappings;
   final bool loading;
   final VoidCallback onClear;
   final VoidCallback onShare;
+  final void Function(RecordedMapping, _BtEntry) onAssign;
+  final bool a11yEnabled;
+  final VoidCallback onOpenA11ySettings;
 
   @override
   Widget build(BuildContext context) {
@@ -703,7 +841,7 @@ class _MappingsTab extends StatelessWidget {
       children: [
         // راهنما
         Container(
-          margin: const EdgeInsets.all(12),
+          margin: const EdgeInsets.fromLTRB(12, 12, 12, 6),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: const Color(0xFF4FC3F7).withOpacity(0.07),
@@ -721,12 +859,56 @@ class _MappingsTab extends StatelessWidget {
             ),
           ]),
         ),
+        // بنر سرویس دسترسی‌پذیری — برای دکمه‌هایی که اصلاً توسط اپ دیده
+        // نمی‌شوند (HOME واقعی، VOLUME +/-، بی‌صدا) چون اندروید آن‌ها را
+        // قبل از رسیدن به هر اپ مصرف می‌کند.
+        if (!a11yEnabled)
+          Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFF8A65).withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFFF8A65).withOpacity(0.25)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFFF8A65)),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'دکمه‌هایی مثل HOME واقعی، ولوم و بی‌صدا اصلاً دیده نمی‌شوند',
+                    style: TextStyle(color: Color(0xFFFF8A65), fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 6),
+              const Text(
+                'این دکمه‌ها را خودِ اندروید قبل از رسیدن به هر اپ مصرف می‌کند. با فعال‌کردن «سرویس دسترسی‌پذیری» می‌توان آن‌ها را هم دید و ضبط کرد.',
+                style: TextStyle(color: Color(0xFFBBBBBB), fontSize: 11, height: 1.6),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onOpenA11ySettings,
+                  icon: const Icon(Icons.accessibility_new_rounded, size: 16),
+                  label: const Text('باز کردن تنظیمات دسترسی‌پذیری'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFFF8A65),
+                    side: const BorderSide(color: Color(0xFFFF8A65)),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+            ]),
+          ),
         // لیست
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
             itemCount: mappings.length,
-            itemBuilder: (_, i) => _MappingCard(mappings[i]),
+            itemBuilder: (_, i) => _MappingCard(mappings[i], onAssign: onAssign),
           ),
         ),
       ],
@@ -735,8 +917,19 @@ class _MappingsTab extends StatelessWidget {
 }
 
 class _MappingCard extends StatelessWidget {
-  const _MappingCard(this.m);
+  const _MappingCard(this.m, {required this.onAssign});
   final RecordedMapping m;
+  final void Function(RecordedMapping, _BtEntry) onAssign;
+
+  Future<void> _pickManualBt(BuildContext context) async {
+    final chosen = await showModalBottomSheet<_BtEntry>(
+      context: context,
+      backgroundColor: const Color(0xFF141414),
+      isScrollControlled: true,
+      builder: (_) => _BtPickerSheet(keyName: m.keyName),
+    );
+    if (chosen != null) onAssign(m, chosen);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -860,7 +1053,93 @@ class _MappingCard extends StatelessWidget {
             ),
           ),
         ]),
+
+        // ── انتخاب دستیِ کد بلوتوث — فقط وقتی نگاشت خودکار پیدا نشد ────
+        if (!hasBt && !isSys) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _pickManualBt(context),
+              icon: const Icon(Icons.edit_rounded, size: 16),
+              label: const Text('انتخاب دستی کد بلوتوث'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF4FC3F7),
+                side: const BorderSide(color: Color(0xFF4FC3F7)),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+              ),
+            ),
+          ),
+        ],
       ]),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  شیت انتخاب دستیِ عملکرد یک دکمه — وقتی نگاشت خودکار پیدا نشود
+// ════════════════════════════════════════════════════════════════════════
+class _BtPickerSheet extends StatelessWidget {
+  const _BtPickerSheet({required this.keyName});
+  final String keyName;
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (_, scrollController) => Column(
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: const Color(0xFF444444),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('عملکرد واقعی «$keyName» چیست؟',
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 6),
+              const Text(
+                'اندروید نتوانست این دکمه را با کلید شناخته‌شده‌ای تطبیق دهد، بنابراین کد بلوتوث آن به‌طور خودکار پیدا نشد. اگر می‌دانید این دکمه فیزیکی چه کاری انجام می‌دهد، از فهرست زیر انتخاب کنید.',
+                style: TextStyle(color: Color(0xFF888888), fontSize: 12, height: 1.6),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          const Divider(color: Color(0xFF2A2A2A), height: 1),
+          Expanded(
+            child: ListView.builder(
+              controller: scrollController,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              itemCount: _manualBtChoices.length,
+              itemBuilder: (_, i) {
+                final e = _manualBtChoices[i];
+                return ListTile(
+                  dense: true,
+                  title: Text(e.remoteKey,
+                      style: const TextStyle(color: Colors.white, fontSize: 14)),
+                  subtitle: Text(
+                    'page=${e.page}  usage=0x${e.usage.toRadixString(16).padLeft(4, '0').toUpperCase()}',
+                    style: const TextStyle(color: Color(0xFF666666), fontSize: 11),
+                  ),
+                  trailing: const Icon(Icons.chevron_left_rounded, color: Color(0xFF4FC3F7)),
+                  onTap: () => Navigator.pop(context, e),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

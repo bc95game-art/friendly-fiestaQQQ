@@ -8,11 +8,13 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.InputDevice
 import android.view.KeyEvent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodChannel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -58,6 +60,20 @@ class MainActivity : FlutterActivity() {
             sentKeys[dedupeKey] = now
             val time = timeFmt.format(Date())
             emit(keySink, "$time|DOWN|3|KEYCODE_HOME|172|SYS|-1|system|0")
+        }
+    }
+
+    // ── گیرنده رویدادهای کلید از KeyAccessibilityService ─────────────────
+    // دکمه‌هایی مثل HOME واقعی، VOLUME_UP/DOWN و MUTE را خودِ اندروید قبل
+    // از رسیدن به این Activity مصرف می‌کند (حتی BroadcastReceiver بالا هم
+    // آن‌ها را نمی‌بیند). اگر کاربر سرویس دسترسی‌پذیری را فعال کرده باشد،
+    // این گیرنده همان دکمه‌ها را از آن سرویس دریافت و به همان کانال
+    // EventChannel موجود تزریق می‌کند — یعنی از دید Flutter هیچ فرقی با
+    // بقیه‌ی دکمه‌ها ندارد.
+    private val a11yReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val line = intent.getStringExtra(KeyAccessibilityService.EXTRA_LINE) ?: return
+            emit(keySink, line)
         }
     }
 
@@ -135,11 +151,53 @@ class MainActivity : FlutterActivity() {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(systemReceiver, sysFilter)
         }
+
+        // ثبت گیرنده‌ی رویدادهای سرویس دسترسی‌پذیری — این broadcast فقط از
+        // داخل همین اپ ارسال می‌شود (KeyAccessibilityService با setPackage)
+        // پس RECEIVER_NOT_EXPORTED صحیح است.
+        val a11yFilter = IntentFilter(KeyAccessibilityService.ACTION_KEY)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(a11yReceiver, a11yFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(a11yReceiver, a11yFilter)
+        }
+
+        // ── کانال متد برای تنظیمات دسترسی‌پذیری (باز کردن صفحه‌ی تنظیمات
+        // و بررسی اینکه آیا کاربر سرویس را فعال کرده یا نه) ─────────────
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "daewoo_tv_diag/a11y")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isEnabled" -> result.success(isAccessibilityServiceEnabled())
+                    "openSettings" -> {
+                        try {
+                            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.success(false)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    /** بررسی می‌کند آیا کاربر KeyAccessibilityService را از تنظیمات فعال کرده یا نه. */
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val expected = "$packageName/${KeyAccessibilityService::class.java.name}"
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
     }
 
     override fun onDestroy() {
         try { unregisterReceiver(btReceiver)     } catch (_: IllegalArgumentException) {}
         try { unregisterReceiver(systemReceiver) } catch (_: IllegalArgumentException) {}
+        try { unregisterReceiver(a11yReceiver)   } catch (_: IllegalArgumentException) {}
         super.onDestroy()
     }
 
