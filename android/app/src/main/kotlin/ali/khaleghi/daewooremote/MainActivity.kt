@@ -324,6 +324,22 @@ class MainActivity : FlutterActivity() {
         }
         registering = true
 
+        // ⚠️ رفع باگ «قفل‌شدن اپ»: اگر BT service هرگز onServiceConnected نفرستد
+        // (کرش سرویس، ROM سفارشی، یا race هنگام خاموش/روشن‌شدن بلوتوث)،
+        // registering=true می‌ماند و _busy در سمت Dart هم قفل می‌ماند —
+        // اپ دیگر هیچ‌وقت نمی‌تواند اتصال بگیرد تا کاربر کاملاً آن را
+        // ببندد و باز کند. timeout بعد از ۸ ثانیه state را پاک می‌کند.
+        val timeoutRunnable = Runnable {
+            if (registering) {
+                registering = false
+                try {
+                    result.error("register_timeout",
+                        "سرویس بلوتوث در زمان مقرر پاسخ نداد — بلوتوث را خاموش و روشن کنید", null)
+                } catch (_: Throwable) {}
+            }
+        }
+        mainHandler.postDelayed(timeoutRunnable, 8_000)
+
         val sdp = BluetoothHidDeviceAppSdpSettings(
             "کنترل هوشمند دوو",
             "ریموت بلوتوثی مجازی",
@@ -338,6 +354,7 @@ class MainActivity : FlutterActivity() {
 
         adapter.getProfileProxy(this, object : BluetoothProfile.ServiceListener {
             override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                mainHandler.removeCallbacks(timeoutRunnable)
                 // ⚠️ رفع باگ crash: قبلاً «proxy as BluetoothHidDevice» (بدون ?)
                 // استفاده می‌شد — اگر proxy از نوع اشتباه می‌بود ClassCastException
                 // uncaught می‌انداخت و اپ crash می‌کرد. حالا از cast ایمن استفاده می‌شود.
@@ -375,7 +392,12 @@ class MainActivity : FlutterActivity() {
                             }
                             BluetoothProfile.STATE_DISCONNECTED,
                             BluetoothProfile.STATE_DISCONNECTING -> {
-                                if (connectedDevice?.address == device?.address) {
+                                // ⚠️ رفع باگ: برخی ROM‌ها هنگام disconnect، device=null
+                                // می‌فرستند — در این حالت address قابل مقایسه نیست و
+                                // connectedDevice هرگز null نمی‌شد (وضعیت state در
+                                // سمت Kotlin «متصل» می‌ماند ولی واقعاً وصل نبود).
+                                // حالا null device به‌معنی «همه‌ی اتصال‌ها قطع شدند» تفسیر می‌شود.
+                                if (device == null || connectedDevice?.address == device.address) {
                                     connectedDevice = null
                                 }
                                 hidEventSink?.success("disconnected")
@@ -422,6 +444,7 @@ class MainActivity : FlutterActivity() {
             }
 
             override fun onServiceDisconnected(profile: Int) {
+                mainHandler.removeCallbacks(timeoutRunnable)
                 registering = false
                 registered = false
                 hidDevice = null
@@ -484,13 +507,21 @@ class MainActivity : FlutterActivity() {
             result.success(false)
             return
         }
-        // ⚠️ رفع باگ: قبلاً اگر یک اتصال قبلی (به همین دستگاه یا دستگاه دیگر)
-        // هنوز به‌عنوان connectedDevice ثبت بود، connect() جدید را مستقیم روی
-        // آن صدا می‌زدیم — استک بلوتوث اندروید روی برخی گوشی‌ها این
-        // درخواست هم‌پوشان را رد می‌کند و دیگر تا ثبت مجدد کامل (ری‌استارت
-        // اپ) اتصال برقرار نمی‌شود. حالا همیشه اول قطع می‌کنیم.
+        // ⚠️ رفع باگ: قبلاً اگر یک اتصال قبلی ثبت بود، بلافاصله بعد از
+        // disconnectCurrent() اتصال جدید می‌زدیم — پشته‌ی بلوتوث اندروید
+        // disconnect را async پردازش می‌کند و اتصال جدید قبل از اتمام
+        // disconnect رد می‌شود. رفع: اگر دستگاه قبلی متصل است، ۲۰۰ms صبر
+        // می‌کنیم تا stack فرصت داشته باشد disconnect را کامل پردازش کند.
         if (connectedDevice != null) {
             disconnectCurrent()
+            mainHandler.postDelayed({
+                try {
+                    result.success(hid.connect(device))
+                } catch (e: Throwable) {
+                    result.success(false)
+                }
+            }, 200)
+            return
         }
         try {
             result.success(hid.connect(device))

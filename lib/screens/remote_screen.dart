@@ -86,7 +86,14 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         // اتصال اولیه شکست می‌خورد (wasConnected=false)، هیچ تلاش مجددی
         // انجام نمی‌شد و کاربر گیر می‌کرد. حالا در هر قطع/خطا، تلاش
         // مجدد برنامه‌ریزی می‌شود.
-        if (s == BtConnState.disconnected || s == BtConnState.error) {
+        //
+        // ⚠️ رفع باگ «double-counting retry»: فقط وقتی _btInitializing=false است
+        // reconnect برنامه‌ریزی می‌کنیم. وقتی _btInitializing=true باشد،
+        // _initBluetoothInner هنوز در حال اجراست (شامل hardReset+connect داخلی).
+        // هر emit(error) در این بازه یک counter اضافه ایجاد می‌کرد — بعد از
+        // ۲-۳ تلاش واقعی counter به max می‌رسید و دیگر هیچ retry نمی‌شد.
+        if ((s == BtConnState.disconnected || s == BtConnState.error) &&
+            !_btInitializing) {
           _scheduleAutoReconnect();
         }
       });
@@ -203,6 +210,12 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     if (state == AppLifecycleState.resumed &&
         widget.mode.isBluetooth &&
         !BtHidService.instance.isConnected) {
+      // ⚠️ رفع باگ: اگر _btInitializing=true باشد، _initBluetooth هم‌اکنون
+      // در حال اجراست — کنسل‌کردن timer یا ریست counter در این لحظه باعث
+      // می‌شود init در حال اجرا بدون پوشش بماند و بعد از اتمامش هیچ
+      // retry دیگری برنامه‌ریزی نشود. فقط وقتی init فعالی وجود ندارد
+      // وارد این شاخه می‌شویم.
+      if (_btInitializing) return;
       // ⚠️ رفع باگ race: اگر _retryTimer در صف بود و اپ همزمان به پیش‌زمینه
       // برگشت، دو مسیر اتصال موازی اجرا می‌شدند — timer و lifecycle هر دو
       // _initBluetooth صدا می‌زدند. الان timer کنسل می‌شود تا فقط یک مسیر
