@@ -904,7 +904,10 @@ class _SmallRemoteState extends State<_SmallRemote> {
     final onPress = widget.onPress;
     final locked = !mode.supportsTouchpad;
     return ListView(
-      physics: (_touchpadDragging || _mouseActive)
+      // ⚠️ رفع باگ «اسکرول همیشه قفل بود»: قبلاً شرط شامل _mouseActive بود،
+      // ولی چون حالا _mouseActive=true پیش‌فرض است، لیست هیچ‌وقت اسکرول
+      // نمی‌شد. حالا فقط در طول کشیدن روی تاچ‌پد قفل می‌شود — نه بیشتر.
+      physics: _touchpadDragging
           ? const NeverScrollableScrollPhysics()
           : const AlwaysScrollableScrollPhysics(),
       children: [

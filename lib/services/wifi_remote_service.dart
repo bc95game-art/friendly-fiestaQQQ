@@ -122,10 +122,13 @@ class WifiRemoteService {
     for (final (ip, port) in pairs) {
       Socket.connect(ip, port, timeout: const Duration(milliseconds: 800))
           .then((s) {
+        // ⚠️ رفع باگ «نشت Socket»: socket آزمایشی را همیشه ببند —
+        // اگر برنده باشد _openSocket() بعداً اتصال واقعی می‌سازد،
+        // اگر بازنده باشد هم باید بسته شود. بدون این، تلویزیون دو
+        // اتصال همزمان می‌دید (آزمایش + واقعی).
+        s.destroy();
         if (!completer.isCompleted) {
           completer.complete((ip, port));
-        } else {
-          s.destroy();
         }
       }).catchError((_) {
         pending--;

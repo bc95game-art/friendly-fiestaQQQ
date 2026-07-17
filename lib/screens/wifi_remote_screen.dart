@@ -414,7 +414,6 @@ class _RemoteView extends StatefulWidget {
 }
 
 class _RemoteViewState extends State<_RemoteView> {
-  bool _touchDragging = false;
   bool _showExtra = false; // پنل کنترل‌های بیشتر
 
   Future<void> _k(String key) async {
@@ -473,8 +472,7 @@ class _RemoteViewState extends State<_RemoteView> {
               height: double.infinity,
               onMove: (dx, dy) => widget.svc.sendMouseMove(dx, dy),
               onTap: () => widget.svc.sendMouseClick(),
-              onDragStart: () => setState(() => _touchDragging = true),
-              onDragEnd: () => setState(() => _touchDragging = false),
+              // آرامش اسکرول: Column ندارد ListView، پس قفل scroll لازم نیست
             ),
           ),
         ),
