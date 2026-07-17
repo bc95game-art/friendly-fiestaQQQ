@@ -94,7 +94,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               const SizedBox(height: 14),
               _ModeCard(
                 title: 'کنترل با فرستنده — اتصال هوشمند',
-                subtitle: 'اگر گوشی شما فرستنده IR دارد',
+                subtitle: 'کنترل با فرستنده — اگر پشتیبانی می‌شود',
                 icon: Icons.settings_remote_rounded,
                 accent: AppColors.irAccent,
                 onTap: () => Navigator.of(context).push(
