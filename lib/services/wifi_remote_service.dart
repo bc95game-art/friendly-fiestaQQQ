@@ -5,27 +5,28 @@ import 'dart:io';
 enum WifiConnState { disconnected, connecting, connected, error }
 
 /// ══════════════════════════════════════════════════════════════════════
-///  WifiRemoteService — کنترل تلویزیون از طریق شبکه وای‌فای محلی
+///  WifiRemoteService — کنترل تلویزیون از طریق وای‌فای محلی
 /// ══════════════════════════════════════════════════════════════════════
 ///
-///  پروتکل: TCP socket روی پورت ۹۰۰۰ — دستورات به صورت خطوط متنی:
-///    KEY:power         ← دکمه‌های کنترل
-///    KEY:up / down / left / right / ok
-///    KEY:back / home / menu
-///    KEY:vol_up / vol_down / mute
-///    KEY:ch_up / ch_down / source
-///    KEY:play_pause / rewind / forward
-///    MOUSE:dx,dy       ← حرکت نشانگر (مقادیر نسبی)
-///    CLICK             ← کلیک چپ موس
-///    HEARTBEAT         ← نگه‌داشتن اتصال زنده
+///  پروتکل: TCP socket — دستورات خطی ساده:
+///    KEY:power | KEY:up | KEY:down | KEY:left | KEY:right | KEY:ok
+///    KEY:back  | KEY:home | KEY:menu | KEY:source
+///    KEY:vol_up | KEY:vol_down | KEY:mute
+///    KEY:ch_up  | KEY:ch_down
+///    KEY:play_pause | KEY:rewind | KEY:forward
+///    MOUSE:dx,dy    ← حرکت نشانگر (مقادیر نسبی)
+///    CLICK          ← کلیک چپ
+///    HEARTBEAT      ← نگه‌داری اتصال
 ///
-///  نیاز TV: یک سرور ساده روی پورت ۹۰۰۰ که این دستورات را به
-///  رویداد کلید اندروید ترجمه کند. مثال پایتون در README توضیح داده شده.
+///  وقتی تلویزیون نقطه‌ی اتصال WiFi است (مثل گوشی)، IP آن معمولاً
+///  همان گتوی شبکه است — متد [detectTvIp] آن را خودکار پیدا می‌کند.
 class WifiRemoteService {
   WifiRemoteService._();
   static final WifiRemoteService instance = WifiRemoteService._();
 
-  static const defaultPort = 9000;
+  // پورت‌های احتمالی که تلویزیون روی آن‌ها گوش می‌دهد
+  static const List<int> tryPorts = [9000, 5000, 8686, 8080, 1234, 4321, 9090];
+  static const _connectTimeout = Duration(seconds: 4);
 
   final _stateCtrl = StreamController<WifiConnState>.broadcast();
   Stream<WifiConnState> get stateStream => _stateCtrl.stream;
@@ -39,6 +40,7 @@ class WifiRemoteService {
   int? _connectedPort;
   Timer? _heartbeatTimer;
   String? get connectedIp => _connectedIp;
+  int? get connectedPort => _connectedPort;
 
   String? lastError;
 
@@ -47,20 +49,118 @@ class WifiRemoteService {
     _stateCtrl.add(s);
   }
 
-  /// اتصال به IP و پورت مشخص‌شده
-  Future<bool> connect(String ip, {int port = defaultPort}) async {
-    if (_state == WifiConnState.connecting) return false;
+  // ── شناسایی خودکار IP تلویزیون ─────────────────────────────────────────
+  /// وقتی تلویزیون به‌عنوان نقطه‌ی اتصال WiFi عمل می‌کند (مانند هات‌اسپات
+  /// گوشی)، IP آن معمولاً همان آدرس گتوی شبکه‌ی گوشی است:
+  ///   - هات‌اسپات اندروید استاندارد: 192.168.43.1
+  ///   - WiFi Direct اندروید:         192.168.49.1
+  ///   - هات‌اسپات iOS:               172.20.10.1
+  ///   - سایر حالت‌ها: اولین آدرس subnet (.1)
+  Future<List<String>> detectTvIp() async {
+    final candidates = <String>[];
+    try {
+      final ifaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLinkLocal: false,
+      );
+      for (final iface in ifaces) {
+        for (final addr in iface.addresses) {
+          final ip = addr.address;
+          if (ip.startsWith('127.')) continue;
 
-    await disconnect(silent: true);
+          final parts = ip.split('.');
+          if (parts.length != 4) continue;
+
+          // هات‌اسپات اندروید استاندارد
+          if (ip.startsWith('192.168.43.')) {
+            candidates.insert(0, '192.168.43.1');
+          }
+          // WiFi Direct
+          else if (ip.startsWith('192.168.49.')) {
+            candidates.insert(0, '192.168.49.1');
+          }
+          // هات‌اسپات iOS
+          else if (ip.startsWith('172.20.10.')) {
+            candidates.insert(0, '172.20.10.1');
+          }
+          // سایر شبکه‌ها — گتوی احتمالی = .1
+          else {
+            candidates.add('${parts[0]}.${parts[1]}.${parts[2]}.1');
+          }
+        }
+      }
+    } catch (_) {}
+
+    // اگر هیچ رابطی پیدا نشد، مقادیر پیش‌فرض را برگردان
+    if (candidates.isEmpty) {
+      candidates.addAll(['192.168.43.1', '192.168.49.1', '192.168.1.1']);
+    }
+
+    return candidates.toSet().toList(); // حذف تکراری‌ها
+  }
+
+  // ── اتصال خودکار (شناسایی IP + پورت) ──────────────────────────────────
+  /// ابتدا IP تلویزیون را خودکار شناسایی می‌کند، سپس روی همه‌ی پورت‌های
+  /// معمول اتصال را امتحان می‌کند. اولین اتصال موفق برنده می‌شود.
+  Future<bool> autoConnect() async {
+    if (_state == WifiConnState.connecting) return false;
     lastError = null;
     _emit(WifiConnState.connecting);
 
+    final ips = await detectTvIp();
+    final pairs = <(String, int)>[];
+    for (final ip in ips) {
+      for (final port in tryPorts) {
+        pairs.add((ip, port));
+      }
+    }
+
+    // همه را به‌موازات امتحان می‌کنیم — اولین موفق برنده
+    final completer = Completer<(String, int)?>();
+    var pending = pairs.length;
+
+    for (final (ip, port) in pairs) {
+      Socket.connect(ip, port, timeout: const Duration(milliseconds: 800))
+          .then((s) {
+        if (!completer.isCompleted) {
+          completer.complete((ip, port));
+        } else {
+          s.destroy();
+        }
+      }).catchError((_) {
+        pending--;
+        if (pending == 0 && !completer.isCompleted) {
+          completer.complete(null);
+        }
+      });
+    }
+
+    final result = await completer.future
+        .timeout(const Duration(seconds: 5), onTimeout: () => null);
+
+    if (result == null) {
+      lastError = 'تلویزیون پیدا نشد — مطمئن شوید گوشی به WiFi تلویزیون وصل است';
+      _emit(WifiConnState.error);
+      return false;
+    }
+
+    return _openSocket(result.$1, result.$2);
+  }
+
+  // ── اتصال به IP دستی ────────────────────────────────────────────────────
+  /// به IP و پورت دستی مشخص‌شده متصل می‌شود.
+  Future<bool> connect(String ip, {int port = 9000}) async {
+    if (_state == WifiConnState.connecting) return false;
+    await disconnect(silent: true);
+    lastError = null;
+    _emit(WifiConnState.connecting);
+    return _openSocket(ip, port);
+  }
+
+  Future<bool> _openSocket(String ip, int port) async {
     try {
-      _socket = await Socket.connect(
-        ip,
-        port,
-        timeout: const Duration(seconds: 5),
-      );
+      await disconnect(silent: true);
+      _socket = await Socket.connect(ip, port, timeout: _connectTimeout);
       _socket!.setOption(SocketOption.tcpNoDelay, true);
       _connectedIp = ip;
       _connectedPort = port;
@@ -69,8 +169,7 @@ class WifiRemoteService {
 
       _socket!.listen(
         (_) {},
-        onError: (e) {
-          lastError = 'اتصال قطع شد';
+        onError: (_) {
           _cleanup();
           _emit(WifiConnState.disconnected);
         },
@@ -83,18 +182,18 @@ class WifiRemoteService {
       return true;
     } on SocketException catch (e) {
       lastError = switch (e.osError?.errorCode) {
-        111 => 'تلویزیون این پورت را نمی‌پذیرد — سرور را بررسی کنید',
-        113 => 'دستگاه در شبکه پیدا نشد — IP را بررسی کنید',
-        _ => 'خطا در اتصال: ${e.message}',
+        111 => 'پورت $port بسته است',
+        113 => 'IP $ip در شبکه پیدا نشد',
+        _   => 'خطا در اتصال (${e.osError?.errorCode})',
       };
       _emit(WifiConnState.error);
       return false;
     } on TimeoutException {
-      lastError = 'مدت انتظار تمام شد — IP یا پورت را بررسی کنید';
+      lastError = 'مهلت اتصال تمام شد';
       _emit(WifiConnState.error);
       return false;
     } catch (e) {
-      lastError = 'خطای ناشناخته: $e';
+      lastError = 'خطا: $e';
       _emit(WifiConnState.error);
       return false;
     }
@@ -119,9 +218,7 @@ class WifiRemoteService {
   Future<void> disconnect({bool silent = false}) async {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
-    try {
-      await _socket?.close();
-    } catch (_) {}
+    try { await _socket?.close(); } catch (_) {}
     _socket = null;
     _connectedIp = null;
     _connectedPort = null;
@@ -130,7 +227,7 @@ class WifiRemoteService {
     }
   }
 
-  /// ارسال یک خط دستور خام (بدون '\n' در انتها — خودش اضافه می‌کند)
+  /// ارسال یک دستور خام — به انتها '\n' اضافه می‌کند
   Future<bool> sendRaw(String line) async {
     final s = _socket;
     if (s == null || _state != WifiConnState.connected) return false;
@@ -139,60 +236,13 @@ class WifiRemoteService {
       await s.flush();
       return true;
     } catch (_) {
-      lastError = 'ارتباط قطع شد';
       _cleanup();
       _emit(WifiConnState.disconnected);
       return false;
     }
   }
 
-  Future<bool> sendKey(String key)              => sendRaw('KEY:$key');
-  Future<bool> sendMouseMove(int dx, int dy)    => sendRaw('MOUSE:$dx,$dy');
-  Future<bool> sendMouseClick()                 => sendRaw('CLICK');
-
-  // ── اسکن شبکه برای یافتن تلویزیون‌های سازگار ─────────────────────────
-  /// شبکه محلی را اسکن می‌کند تا دستگاه‌هایی که پورت ۹۰۰۰ باز دارند
-  /// پیدا کند. چون به همه آدرس‌ها وصل نمی‌شویم (خیلی طول می‌کشد)،
-  /// فقط آدرس‌های رایج (.1 تا .20 و .100 تا .115 و .200+) بررسی می‌شود.
-  Future<List<String>> discover({int port = defaultPort}) async {
-    final found = <String>[];
-    try {
-      final ifaces = await NetworkInterface.list(
-        type: InternetAddressType.IPv4,
-        includeLinkLocal: false,
-      );
-
-      final futures = <Future>[];
-      for (final iface in ifaces) {
-        for (final addr in iface.addresses) {
-          final parts = addr.address.split('.');
-          if (parts.length != 4 || parts[0] == '127') continue;
-          final subnet = '${parts[0]}.${parts[1]}.${parts[2]}';
-
-          // آدرس‌های متداول روتر/TV: ۱–۲۰، ۱۰۰–۱۲۰، ۱۵۰–۱۷۰، ۲۰۰–۲۵۴
-          final last = [
-            ...List.generate(20, (i) => i + 1),
-            ...List.generate(21, (i) => i + 100),
-            ...List.generate(21, (i) => i + 150),
-            ...List.generate(55, (i) => i + 200),
-          ];
-
-          for (final l in last) {
-            final ip = '$subnet.$l';
-            futures.add(
-              Socket.connect(ip, port,
-                      timeout: const Duration(milliseconds: 500))
-                  .then((s) {
-                s.destroy();
-                found.add(ip);
-              }).catchError((_) {}),
-            );
-          }
-        }
-      }
-      await Future.wait(futures);
-    } catch (_) {}
-    found.sort();
-    return found;
-  }
+  Future<bool> sendKey(String key)           => sendRaw('KEY:$key');
+  Future<bool> sendMouseMove(int dx, int dy) => sendRaw('MOUSE:$dx,$dy');
+  Future<bool> sendMouseClick()              => sendRaw('CLICK');
 }
