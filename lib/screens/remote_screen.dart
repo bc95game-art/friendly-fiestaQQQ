@@ -474,7 +474,10 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
                 child: widget.size == RemoteSize.large
                     ? _LargeRemote(accent: accent, onPress: _press)
                     : _SmallRemote(
-                        accent: accent, mode: widget.mode, onPress: _press),
+                        accent: accent,
+                        mode: widget.mode,
+                        onPress: _press,
+                        onError: _showErrorOnce),
               ),
             ],
           ),
@@ -846,10 +849,14 @@ class _LargeRemote extends StatelessWidget {
 // ════════════════════════════════════════════════════════════════════════
 class _SmallRemote extends StatefulWidget {
   const _SmallRemote(
-      {required this.accent, required this.mode, required this.onPress});
+      {required this.accent,
+      required this.mode,
+      required this.onPress,
+      required this.onError});
   final Color accent;
   final RemoteMode mode;
   final void Function(String) onPress;
+  final void Function(String) onError;
 
   @override
   State<_SmallRemote> createState() => _SmallRemoteState();
@@ -1001,7 +1008,7 @@ class _SmallRemoteState extends State<_SmallRemote> {
                   // نیست، کاربر موس را فعال می‌کرد ولی هیچ اتفاقی نمی‌افتاد
                   // و فکر می‌کرد دکمه خراب است. حالا پیام واضح داده می‌شود.
                   if (!BtHidService.instance.isConnected && !locked) {
-                    _showErrorOnce('ابتدا به بلوتوث تلویزیون متصل شوید تا موس کار کند');
+                    widget.onError('ابتدا به بلوتوث تلویزیون متصل شوید تا موس کار کند');
                   }
                 },
                 child: const Icon(Icons.mouse_rounded),
