@@ -863,7 +863,10 @@ class _SmallRemote extends StatefulWidget {
 }
 
 class _SmallRemoteState extends State<_SmallRemote> {
-  bool _mouseActive = false;
+  // ⚠️ بهبود EShare-style: تاچ‌پد از همان ابتدا فعال است — کاربر بلافاصله
+  // می‌تواند بکشد (حرکت نشانگر) یا ضربه بزند (کلیک)، بدون نیاز به فشار
+  // دکمه‌ی جداگانه. دکمه‌ی موس همچنان در UI هست و می‌توان تاچ‌پد را خاموش کرد.
+  bool _mouseActive = true;
 
   /// ⚠️ رفع باگ «موقع حرکت‌دادن نشانگر با تاچ‌پد، کل صفحه‌ی کنترل هم
   /// اسکرول می‌شود»: صفحه‌ی کنترل کوچک داخل یک ListView قابل‌اسکرول است
@@ -1054,10 +1057,25 @@ class _SmallRemoteState extends State<_SmallRemote> {
         ),
         const SizedBox(height: 16),
 
-        // ── تاچ‌پد موس (فقط بلوتوث — با پروفایل HID موس واقعی) ───────────
+        // ── تاچ‌پد موس (فقط بلوتوث) — سبک EShare ─────────────────────────
+        // • کشیدن = حرکت نشانگر (sensitivity بالاتر، مثل EShare)
+        // • ضربه‌ی ساده = کلیک چپ موس
+        // • تاچ‌پد از همان ابتدا فعال است (_mouseActive = true)
         Touchpad(
-          active: _mouseActive,
-          locked: locked,
+          active: _mouseActive && !locked,
+          accentColor: widget.accent,
+          height: 170,
+          hint: 'ابتدا به بلوتوث تلویزیون متصل شوید تا تاچ‌پد کار کند',
+          onMove: (dx, dy) async {
+            if (BtHidService.instance.isConnected) {
+              await BtHidService.instance.sendMouseMove(dx, dy);
+            }
+          },
+          onTap: () async {
+            if (BtHidService.instance.isConnected) {
+              await BtHidService.instance.sendMouseClick();
+            }
+          },
           onDragStart: () => setState(() => _touchpadDragging = true),
           onDragEnd: () => setState(() => _touchpadDragging = false),
         ),

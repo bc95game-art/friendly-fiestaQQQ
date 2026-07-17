@@ -3,6 +3,7 @@ import '../models/remote_mode.dart';
 import '../services/bt_hid_service.dart';
 import '../theme/colors.dart';
 import 'size_picker_screen.dart';
+import 'wifi_remote_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -15,11 +16,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   @override
   void initState() {
     super.initState();
-    // ⚠️ چون کاربر به adb/logcat یا Play Console دسترسی ندارد، تنها راه
-    // دیدن علت واقعی یک کرش قبلی همین است: بعد از هر بار باز شدن اپ، از
-    // سمت نیتیو می‌پرسیم آیا کرشی از باز شدن قبلی ثبت شده — اگر بله، یک‌بار
-    // در قالب دیالوگِ قابل‌کپی نشان می‌دهیم تا کاربر بتواند از آن اسکرین‌شات
-    // بگیرد یا متنش را کپی/ارسال کند.
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkLastCrash());
   }
 
@@ -30,11 +26,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.panel,
-        title: const Text('گزارش کرش قبلی', style: TextStyle(color: AppColors.text1)),
+        title: const Text('گزارش کرش قبلی',
+            style: TextStyle(color: AppColors.text1)),
         content: SingleChildScrollView(
           child: SelectableText(
             log,
-            style: const TextStyle(color: AppColors.text2, fontSize: 12, fontFamily: 'monospace'),
+            style: const TextStyle(
+                color: AppColors.text2, fontSize: 12, fontFamily: 'monospace'),
           ),
         ),
         actions: [
@@ -56,6 +54,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
           child: Column(
             children: [
               const SizedBox(height: 32),
+              // ── آیکون لوگو ────────────────────────────────────────────
               Container(
                 width: 80,
                 height: 80,
@@ -68,55 +67,90 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     colors: [Color(0xFF2B3A4A), Color(0xFF151A20)],
                   ),
                 ),
-                child: const Icon(Icons.tv_rounded, color: AppColors.text1, size: 36),
+                child: const Icon(Icons.tv_rounded,
+                    color: AppColors.text1, size: 36),
               ),
               const SizedBox(height: 24),
               const Text(
                 'خوش آمدید',
-                style: TextStyle(fontSize: 30, fontWeight: FontWeight.w700, color: AppColors.text1),
+                style: TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.text1),
               ),
               const SizedBox(height: 8),
               const Text(
-                'روش کنترل تلویزیون دوو خود را انتخاب کنید — هوشمند',
+                'روش کنترل تلویزیون دوو خود را انتخاب کنید',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, height: 1.8, color: AppColors.text2, fontWeight: FontWeight.w500),
+                style: TextStyle(
+                    fontSize: 14,
+                    height: 1.8,
+                    color: AppColors.text2,
+                    fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 36),
+
+              // ── کارت بلوتوث ───────────────────────────────────────────
               _ModeCard(
-                title: 'کنترل های هوشمند — بلوتوثی',
-                subtitle: 'کنترل با بلوتوث — اتصال هوشمند',
+                title: 'کنترل بلوتوثی — اتصال هوشمند',
+                subtitle: 'کنترل با بلوتوث — تاچ‌پد موس هوشمند',
                 icon: Icons.bluetooth_rounded,
                 accent: AppColors.btAccent,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SizePickerScreen(mode: RemoteMode.bluetooth)),
-                ),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) =>
+                      const SizePickerScreen(mode: RemoteMode.bluetooth),
+                )),
               ),
               const SizedBox(height: 14),
+
+              // ── کارت وای‌فای ──────────────────────────────────────────
+              _ModeCard(
+                title: 'کنترل وای‌فای — اتصال شبکه',
+                subtitle: 'کنترل از طریق شبکه — تاچ‌پد سبک EShare',
+                icon: Icons.wifi_rounded,
+                accent: AppColors.wifiAccent,
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const WifiRemoteScreen(),
+                )),
+              ),
+              const SizedBox(height: 14),
+
+              // ── کارت فرستنده ──────────────────────────────────────────
               _ModeCard(
                 title: 'کنترل با فرستنده — اتصال هوشمند',
-                subtitle: 'کنترل با فرستنده — اگر پشتیبانی می‌شود',
+                subtitle: 'کنترل با فرستنده IR — اگر پشتیبانی می‌شود',
                 icon: Icons.settings_remote_rounded,
                 accent: AppColors.irAccent,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SizePickerScreen(mode: RemoteMode.ir)),
-                ),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) =>
+                      const SizePickerScreen(mode: RemoteMode.ir),
+                )),
               ),
+
               const Spacer(),
+              // ── نوار پایین ────────────────────────────────────────────
               Container(
                 margin: const EdgeInsets.only(bottom: 24),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
                   color: AppColors.success.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: AppColors.success.withOpacity(0.4)),
+                  border:
+                      Border.all(color: AppColors.success.withOpacity(0.4)),
                 ),
                 child: const Text.rich(
                   TextSpan(
                     text: 'استفاده ',
                     style: TextStyle(fontSize: 12, color: AppColors.text2),
                     children: [
-                      TextSpan(text: 'رایگان', style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w800)),
-                      TextSpan(text: ' برای تمام کاربران — طراح : امیررضا موسوی'),
+                      TextSpan(
+                          text: 'رایگان',
+                          style: TextStyle(
+                              color: AppColors.success,
+                              fontWeight: FontWeight.w800)),
+                      TextSpan(
+                          text: ' برای تمام کاربران — طراح : امیررضا موسوی'),
                     ],
                   ),
                 ),
@@ -129,6 +163,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   }
 }
 
+// ── کارت روش کنترل ────────────────────────────────────────────────────
 class _ModeCard extends StatelessWidget {
   const _ModeCard({
     required this.title,
@@ -153,7 +188,7 @@ class _ModeCard extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(AppColors.radiusMd),
           border: Border.all(color: AppColors.line),
-          gradient: LinearGradient(
+          gradient: const LinearGradient(
             colors: [AppColors.panel, AppColors.panel2],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -176,9 +211,14 @@ class _ModeCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text1)),
+                      style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.text1)),
                   const SizedBox(height: 4),
-                  Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.text2)),
+                  Text(subtitle,
+                      style:
+                          const TextStyle(fontSize: 12, color: AppColors.text2)),
                 ],
               ),
             ),
