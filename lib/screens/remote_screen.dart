@@ -988,14 +988,7 @@ class _SmallRemoteState extends State<_SmallRemote> {
                   // نیست، کاربر موس را فعال می‌کرد ولی هیچ اتفاقی نمی‌افتاد
                   // و فکر می‌کرد دکمه خراب است. حالا پیام واضح داده می‌شود.
                   if (!BtHidService.instance.isConnected && !locked) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'ابتدا به بلوتوث تلویزیون متصل شوید تا موس کار کند',
-                        ),
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
+                    _showErrorOnce('ابتدا به بلوتوث تلویزیون متصل شوید تا موس کار کند');
                   }
                 },
                 child: const Icon(Icons.mouse_rounded),

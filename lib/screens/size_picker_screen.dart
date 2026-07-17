@@ -10,16 +10,45 @@ class SizePickerScreen extends StatelessWidget {
   const SizePickerScreen({super.key, required this.mode});
   final RemoteMode mode;
 
+  Future<void> _showErrorDialog(BuildContext context, String message) async {
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.panel,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppColors.radiusMd),
+          side: const BorderSide(color: AppColors.line),
+        ),
+        title: const Text(
+          'خطا',
+          style: TextStyle(color: AppColors.text1, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(color: AppColors.text2, height: 1.7),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('باشه',
+                style: TextStyle(
+                    color: AppColors.btAccent, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _open(BuildContext context, RemoteSize size) async {
     if (mode.isIr) {
       // ── بررسی وجود سخت‌افزار IR ─────────────────────────────────────────
       final hasIr = await IrService.instance.hasIrEmitter();
       if (!hasIr) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('گوشی شما فرستنده مادون‌قرمز (IR) سخت‌افزاری ندارد'),
-            ),
+          await _showErrorDialog(
+            context,
+            'گوشی شما فرستنده مادون‌قرمز (IR) سخت‌افزاری ندارد',
           );
         }
         return;
@@ -71,16 +100,13 @@ class SizePickerScreen extends StatelessWidget {
           );
         } else {
           // کاربر رد کرد (ولی permanently denied نیست — دفعه بعد می‌توان دوباره درخواست کرد)
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('برای اتصال بلوتوث، مجوز لازم است — دوباره امتحان کنید'),
-              duration: Duration(seconds: 3),
-            ),
+          await _showErrorDialog(
+            context,
+            'برای اتصال بلوتوث، مجوز لازم است — دوباره امتحان کنید',
           );
         }
         return;
       }
-
     }
 
     if (context.mounted) {
@@ -94,7 +120,7 @@ class SizePickerScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final accent = mode.isBluetooth ? AppColors.btAccent : AppColors.irAccent;
     return Scaffold(
-      appBar: AppBar(title: Text('انتخاب حجم — ${mode.title}')),
+      appBar: AppBar(title: Text(mode.isBluetooth ? 'انتخاب کنترل — روش بلوتوثی' : 'انتخاب کنترل — روش فرستنده')),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -108,9 +134,7 @@ class SizePickerScreen extends StatelessWidget {
             const SizedBox(height: 16),
             _SizeCard(
               title: 'کنترل کوچک',
-              subtitle: mode.isBluetooth
-                  ? 'جمع‌وجور — همراه با تاچ‌پد موس'
-                  : 'جمع‌وجور',
+              subtitle: 'جمع‌وجور',
               accent: accent,
               onTap: () => _open(context, RemoteSize.small),
             ),

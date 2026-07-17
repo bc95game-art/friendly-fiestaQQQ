@@ -77,14 +77,14 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'روش کنترل تلویزیون دوو خود را انتخاب کنید — مدل ۱۳۶۳',
+                'روش کنترل تلویزیون دوو خود را انتخاب کنید — هوشمند',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 14, height: 1.8, color: AppColors.text2, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 36),
               _ModeCard(
-                title: 'کنترل با بلوتوث تلویزیون',
-                subtitle: 'اتصال بی‌سیم — نیازمند Pair کردن بلوتوث تلویزیون از تنظیمات گوشی',
+                title: 'کنترل های هوشمند — بلوتوثی',
+                subtitle: 'کنترل با بلوتوث — اتصال هوشمند',
                 icon: Icons.bluetooth_rounded,
                 accent: AppColors.btAccent,
                 onTap: () => Navigator.of(context).push(
@@ -93,7 +93,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ),
               const SizedBox(height: 14),
               _ModeCard(
-                title: 'کنترل با فرستنده مادون‌قرمز (IR)',
+                title: 'کنترل با فرستنده — اتصال هوشمند',
                 subtitle: 'اگر گوشی شما فرستنده IR دارد',
                 icon: Icons.settings_remote_rounded,
                 accent: AppColors.irAccent,
@@ -116,7 +116,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     style: TextStyle(fontSize: 12, color: AppColors.text2),
                     children: [
                       TextSpan(text: 'رایگان', style: TextStyle(color: AppColors.success, fontWeight: FontWeight.w800)),
-                      TextSpan(text: ' برای تمام کاربران — بدون تبلیغات و بدون اشتراک'),
+                      TextSpan(text: ' برای تمام کاربران — طراح : امیررضا موسوی'),
                     ],
                   ),
                 ),

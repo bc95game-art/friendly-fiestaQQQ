@@ -75,7 +75,7 @@ class BtHidCommands {
     'epg': BtHidCommand(true, 0x008D), // Program Guide
     // «Zoom» دکمه‌ی تکی‌ست (نه Zoom In/Out جداگانه)، نزدیک‌ترین معادل واقعی
     // آن در جدول استاندارد Aspect Ratio (تعویض حالت نمایش/زوم) است.
-    'zoom': BtHidCommand(true, 0x006D), // Aspect Ratio
+    'zoom': BtHidCommand(true, 0x0232), // KEYCODE_TV_ZOOM_MODE (تصحیح از 0x006D)
     'audio_track': BtHidCommand(true, 0x0173), // Media Audio Track
     'mic': BtHidCommand(true, 0x00CF), // Voice Command (دکمه میکروفون کنترل کوچک)
     'prev': BtHidCommand(true, 0x00B6), // Scan Previous Track
@@ -114,7 +114,7 @@ class BtHidCommands {
     // • shift: Keyboard page 0xE1 = Left Shift keycode — یک ضربه‌ی کلید
     //   Shift می‌فرستد؛ معادل دقیق Shift دوو (کلید ثانویه اعداد) نیست
     //   ولی شاید در برخی حالت‌های ورودی متن مفید باشد.
-    'text': BtHidCommand(true, 0x0174),
+    'text': BtHidCommand(true, 0x0160), // KEYCODE_TV_TELETEXT (تصحیح از 0x0174)
     'radio': BtHidCommand(true, 0x0085),
     'shift': BtHidCommand(false, 0xE1),
   };
