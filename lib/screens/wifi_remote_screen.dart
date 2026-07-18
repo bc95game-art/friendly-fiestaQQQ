@@ -191,8 +191,8 @@ class _ConnectView extends StatelessWidget {
                         color: AppColors.text1)),
                 const SizedBox(height: 10),
                 const Text(
-                  'گوشی و تلویزیون را به یک شبکه WiFi وصل کنید\n'
-                  'سپس «اتصال خودکار» را بزنید',
+                  'hotspot گوشی را روشن کنید، تلویزیون را به آن وصل کنید\n'
+                  'سپس «اتصال خودکار» را بزنید — تلویزیون پیدا می‌شود',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 13, height: 1.9, color: AppColors.text2),
@@ -313,22 +313,23 @@ class _ConnectView extends StatelessWidget {
                       SizedBox(height: 12),
                       _HintRow(
                         n: '۱',
-                        text: 'تلویزیون و گوشی را به یک شبکه WiFi وصل کنید',
+                        text: 'hotspot گوشی را روشن کنید (تنظیمات → نقطه اتصال)',
                       ),
                       _HintRow(
                         n: '۲',
-                        text:
-                            'یا: گوشی را hotspot کنید و تلویزیون را به آن وصل کنید',
+                        text: 'در تلویزیون، WiFi را به hotspot گوشی وصل کنید',
                       ),
                       _HintRow(
                         n: '۳',
-                        text:
-                            'دکمه «اتصال خودکار» را بزنید — برنامه تلویزیون را پیدا می‌کند',
+                        text: 'دکمه «اتصال خودکار» را بزنید — برنامه تلویزیون را پیدا می‌کند',
                       ),
                       _HintRow(
                         n: '۴',
-                        text:
-                            'اگر پیدا نشد: IP تلویزیون را از تنظیمات شبکه آن بگیرید و دستی وارد کنید',
+                        text: 'روش جایگزین: هر دو را به یک WiFi وصل کنید و اتصال خودکار بزنید',
+                      ),
+                      _HintRow(
+                        n: '۵',
+                        text: 'اگر پیدا نشد: IP تلویزیون را از تنظیمات شبکه آن بگیرید و دستی وارد کنید',
                       ),
                     ],
                   ),

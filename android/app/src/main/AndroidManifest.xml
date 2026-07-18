@@ -9,12 +9,14 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
 
     <!-- ── شبکه WiFi — برای کنترل از طریق وای‌فای (پروتکل EShare) ── -->
-    <!-- INTERNET: برای سوکت TCP به تلویزیون (پورت 2012) -->
+    <!-- INTERNET: سوکت TCP به تلویزیون (پورت 2012) و UDP broadcast (پورت 48689) -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- ACCESS_WIFI_STATE: خواندن IP شبکه برای پیدا کردن تلویزیون -->
+    <!-- ACCESS_WIFI_STATE: خواندن IP شبکه برای محاسبه broadcast address -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- ACCESS_NETWORK_STATE: بررسی اتصال شبکه -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- CHANGE_WIFI_MULTICAST_STATE: لازم برای دریافت UDP broadcast از تلویزیون -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- ── فرستنده مادون‌قرمز ── -->
     <uses-permission android:name="android.permission.TRANSMIT_IR" />
