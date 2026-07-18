@@ -9,7 +9,7 @@ import '../widgets/touchpad.dart';
 ///  WifiRemoteScreen — کنترل وای‌فای، سبک EShare
 ///
 ///  جریان کار:
-///    • قطع: دکمه «اتصال خودکار» — IP گتوی شبکه شناسایی و اتصال برقرار
+///    • قطع: دکمه «اتصال خودکار» — IP تلویزیون از جدول ARP/اسکن زیرشبکه شناسایی
 ///    • وصل: تاچ‌پد بزرگ (مرکز) + دکمه‌های فشرده بالا/پایین مثل EShare
 /// ══════════════════════════════════════════════════════════════════════
 class WifiRemoteScreen extends StatefulWidget {
@@ -184,7 +184,7 @@ class _ConnectView extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
 
-                const Text('کنترل از طریق وای‌فای تلویزیون',
+                const Text('کنترل تلویزیون از طریق وای‌فای',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 20,
@@ -192,7 +192,7 @@ class _ConnectView extends StatelessWidget {
                         color: AppColors.text1)),
                 const SizedBox(height: 10),
                 const Text(
-                  'ابتدا گوشی را به WiFi تلویزیون وصل کنید،\n'
+                  'hotspot گوشی را باز کنید، تلویزیون وصل شود،\n'
                   'سپس دکمه اتصال خودکار را بزنید',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -309,11 +309,11 @@ class _ConnectView extends StatelessWidget {
                       _HintRow(
                           n: '۱',
                           text:
-                              'تنظیمات تلویزیون را باز کنید و WiFi Hotspot یا نقطه اتصال را روشن کنید'),
+                              'در گوشی، hotspot (نقطه اتصال) را روشن کنید'),
                       _HintRow(
                           n: '۲',
                           text:
-                              'در گوشی، به WiFi تلویزیون وصل شوید (نامش روی صفحه نمایش است)'),
+                              'در تلویزیون، به WiFi گوشی وصل شوید (نام hotspot را پیدا کنید)'),
                       _HintRow(
                           n: '۳',
                           text:

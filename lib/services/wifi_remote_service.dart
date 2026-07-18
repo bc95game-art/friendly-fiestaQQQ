@@ -8,6 +8,14 @@ enum WifiConnState { disconnected, connecting, connected, error }
 ///  WifiRemoteService — کنترل تلویزیون از طریق وای‌فای محلی
 /// ══════════════════════════════════════════════════════════════════════
 ///
+///  روش اتصال:
+///    ۱. گوشی hotspot (نقطه اتصال) باز می‌کند
+///    ۲. تلویزیون به hotspot گوشی وصل می‌شود و یک IP دریافت می‌کند
+///    ۳. این سرویس IP تلویزیون را خودکار شناسایی می‌کند:
+///       - ابتدا جدول ARP خوانده می‌شود (دقیق‌ترین روش)
+///       - در صورت شکست، زیرشبکه اسکن می‌شود
+///    ۴. گوشی به TCP server تلویزیون وصل می‌شود و دستورات ارسال می‌کند
+///
 ///  پروتکل: TCP socket — دستورات خطی ساده:
 ///    KEY:power | KEY:up | KEY:down | KEY:left | KEY:right | KEY:ok
 ///    KEY:back  | KEY:home | KEY:menu | KEY:source
@@ -17,9 +25,6 @@ enum WifiConnState { disconnected, connecting, connected, error }
 ///    MOUSE:dx,dy    ← حرکت نشانگر (مقادیر نسبی)
 ///    CLICK          ← کلیک چپ
 ///    HEARTBEAT      ← نگه‌داری اتصال
-///
-///  وقتی تلویزیون نقطه‌ی اتصال WiFi است (مثل گوشی)، IP آن معمولاً
-///  همان گتوی شبکه است — متد [detectTvIp] آن را خودکار پیدا می‌کند.
 class WifiRemoteService {
   WifiRemoteService._();
   static final WifiRemoteService instance = WifiRemoteService._();
@@ -49,20 +54,56 @@ class WifiRemoteService {
     _stateCtrl.add(s);
   }
 
+  // ── خواندن جدول ARP لینوکس ─────────────────────────────────────────────
+  /// /proc/net/arp دستگاه‌های متصل به hotspot را با IP‌هایشان نشان می‌دهد.
+  /// این سریع‌ترین و دقیق‌ترین روش پیدا کردن تلویزیون است.
+  Future<List<String>> _readArpTable() async {
+    try {
+      final file = File('/proc/net/arp');
+      if (!await file.exists()) return [];
+
+      final lines = (await file.readAsString()).split('\n');
+      final ips = <String>[];
+
+      for (int i = 1; i < lines.length; i++) {     // سطر اول header است
+        final parts = lines[i].trim().split(RegExp(r'\s+'));
+        if (parts.length < 4) continue;
+
+        final ip = parts[0];
+        final flags = parts[2];
+
+        // 0x2 = entry کامل و فعال — دستگاه واقعاً متصل است
+        // 0x6 = STALE ولی هنوز معتبر
+        if ((flags == '0x2' || flags == '0x6') && !ip.startsWith('127.')) {
+          ips.add(ip);
+        }
+      }
+      return ips;
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ── شناسایی خودکار IP تلویزیون ─────────────────────────────────────────
-  /// وقتی تلویزیون به‌عنوان نقطه‌ی اتصال WiFi عمل می‌کند (مانند هات‌اسپات
-  /// گوشی)، IP آن معمولاً همان آدرس گتوی شبکه‌ی گوشی است:
-  ///   - هات‌اسپات اندروید استاندارد: 192.168.43.1
-  ///   - WiFi Direct اندروید:         192.168.49.1
-  ///   - هات‌اسپات iOS:               172.20.10.1
-  ///   - سایر حالت‌ها: اولین آدرس subnet (.1)
+  /// گوشی hotspot باز می‌کند و تلویزیون به آن وصل می‌شود.
+  ///
+  ///  هات‌اسپات اندروید: گوشی IP = 192.168.43.1، تلویزیون IP = 192.168.43.xxx
+  ///  WiFi Direct:        گوشی IP = 192.168.49.1، تلویزیون IP = 192.168.49.xxx
+  ///
+  ///  روش پیدا کردن IP تلویزیون:
+  ///  ۱. جدول ARP خوانده می‌شود — سریع و دقیق
+  ///  ۲. اگر ARP چیزی نداشت، زیرشبکه اسکن می‌شود
   Future<List<String>> detectTvIp() async {
     final candidates = <String>[];
+
+    String? hotspotSubnet;   // زیرشبکه‌ای که گوشی روی آن hotspot است
+
     try {
       final ifaces = await NetworkInterface.list(
         type: InternetAddressType.IPv4,
         includeLinkLocal: false,
       );
+
       for (final iface in ifaces) {
         for (final addr in iface.addresses) {
           final ip = addr.address;
@@ -71,37 +112,60 @@ class WifiRemoteService {
           final parts = ip.split('.');
           if (parts.length != 4) continue;
 
-          // هات‌اسپات اندروید استاندارد
-          if (ip.startsWith('192.168.43.')) {
-            candidates.insert(0, '192.168.43.1');
-          }
-          // WiFi Direct
-          else if (ip.startsWith('192.168.49.')) {
-            candidates.insert(0, '192.168.49.1');
-          }
-          // هات‌اسپات iOS
-          else if (ip.startsWith('172.20.10.')) {
-            candidates.insert(0, '172.20.10.1');
-          }
-          // سایر شبکه‌ها — گتوی احتمالی = .1
-          else {
-            candidates.add('${parts[0]}.${parts[1]}.${parts[2]}.1');
+          final lastOctet = int.tryParse(parts[3]) ?? 0;
+          final subnet = '${parts[0]}.${parts[1]}.${parts[2]}';
+
+          if (lastOctet == 1) {
+            // گوشی خودش .1 است ⟹ گوشی hotspot است
+            hotspotSubnet = subnet;
+          } else {
+            // گوشی client است ⟹ تلویزیون gateway است (.1)
+            // (مثلاً گوشی به WiFi روتر وصل است که خود تلویزیون باشد)
+            candidates.add('$subnet.1');
           }
         }
       }
     } catch (_) {}
 
-    // اگر هیچ رابطی پیدا نشد، مقادیر پیش‌فرض را برگردان
-    if (candidates.isEmpty) {
-      candidates.addAll(['192.168.43.1', '192.168.49.1', '192.168.1.1']);
+    // ── حالت رایج: گوشی hotspot ─────────────────────────────────────────
+    if (hotspotSubnet != null) {
+      // اول جدول ARP — سریع‌ترین روش
+      final arpIps = await _readArpTable();
+      // فقط IPs همین زیرشبکه را نگه می‌داریم
+      final subnetIps = arpIps.where((ip) => ip.startsWith('$hotspotSubnet.')).toList();
+      candidates.addAll(subnetIps);
+
+      // اگر ARP خالی بود، آدرس‌های DHCP رایج هات‌اسپات اندروید را اضافه کن
+      if (subnetIps.isEmpty) {
+        // بیشتر نسخه‌های اندروید از .2 یا .100 شروع می‌کنند
+        for (int i = 2; i <= 20; i++) {
+          candidates.add('$hotspotSubnet.$i');
+        }
+        for (int i = 100; i <= 120; i++) {
+          candidates.add('$hotspotSubnet.$i');
+        }
+      }
     }
 
-    return candidates.toSet().toList(); // حذف تکراری‌ها
+    // ── حالت پیش‌فرض اگر هیچ رابطی پیدا نشد ───────────────────────────
+    if (candidates.isEmpty) {
+      final arpIps = await _readArpTable();
+      candidates.addAll(arpIps);
+      // زیرشبکه رایج هات‌اسپات اندروید
+      for (int i = 2; i <= 10; i++) {
+        candidates.add('192.168.43.$i');
+      }
+      for (int i = 100; i <= 105; i++) {
+        candidates.add('192.168.43.$i');
+      }
+    }
+
+    return candidates.toSet().toList();
   }
 
   // ── اتصال خودکار (شناسایی IP + پورت) ──────────────────────────────────
-  /// ابتدا IP تلویزیون را خودکار شناسایی می‌کند، سپس روی همه‌ی پورت‌های
-  /// معمول اتصال را امتحان می‌کند. اولین اتصال موفق برنده می‌شود.
+  /// ابتدا IP تلویزیون را خودکار شناسایی می‌کند (از ARP یا اسکن زیرشبکه)،
+  /// سپس روی همه‌ی پورت‌های معمول اتصال را به‌صورت موازی امتحان می‌کند.
   Future<bool> autoConnect() async {
     if (_state == WifiConnState.connecting) return false;
     lastError = null;
@@ -115,6 +179,12 @@ class WifiRemoteService {
       }
     }
 
+    if (pairs.isEmpty) {
+      lastError = 'هیچ دستگاهی در شبکه پیدا نشد — مطمئن شوید تلویزیون به hotspot گوشی وصل است';
+      _emit(WifiConnState.error);
+      return false;
+    }
+
     // همه را به‌موازات امتحان می‌کنیم — اولین موفق برنده
     final completer = Completer<(String, int)?>();
     var pending = pairs.length;
@@ -122,10 +192,7 @@ class WifiRemoteService {
     for (final (ip, port) in pairs) {
       Socket.connect(ip, port, timeout: const Duration(milliseconds: 800))
           .then((s) {
-        // ⚠️ رفع باگ «نشت Socket»: socket آزمایشی را همیشه ببند —
-        // اگر برنده باشد _openSocket() بعداً اتصال واقعی می‌سازد،
-        // اگر بازنده باشد هم باید بسته شود. بدون این، تلویزیون دو
-        // اتصال همزمان می‌دید (آزمایش + واقعی).
+        // socket آزمایشی را ببند — _openSocket بعداً اتصال واقعی می‌سازد
         s.destroy();
         if (!completer.isCompleted) {
           completer.complete((ip, port));
@@ -142,7 +209,7 @@ class WifiRemoteService {
         .timeout(const Duration(seconds: 5), onTimeout: () => null);
 
     if (result == null) {
-      lastError = 'تلویزیون پیدا نشد — مطمئن شوید گوشی به WiFi تلویزیون وصل است';
+      lastError = 'تلویزیون پیدا نشد — مطمئن شوید تلویزیون به hotspot گوشی وصل است';
       _emit(WifiConnState.error);
       return false;
     }
@@ -151,7 +218,6 @@ class WifiRemoteService {
   }
 
   // ── اتصال به IP دستی ────────────────────────────────────────────────────
-  /// به IP و پورت دستی مشخص‌شده متصل می‌شود.
   Future<bool> connect(String ip, {int port = 9000}) async {
     if (_state == WifiConnState.connecting) return false;
     await disconnect(silent: true);
