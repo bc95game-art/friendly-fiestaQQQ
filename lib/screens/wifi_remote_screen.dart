@@ -423,7 +423,6 @@ class _RemoteViewState extends State<_RemoteView> {
 
   @override
   Widget build(BuildContext context) {
-    final h = MediaQuery.of(context).size.height;
     return Column(
       children: [
         // ══ نوار بالا ══════════════════════════════════════════════════

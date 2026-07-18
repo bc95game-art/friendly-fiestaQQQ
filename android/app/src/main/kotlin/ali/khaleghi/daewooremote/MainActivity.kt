@@ -335,7 +335,7 @@ class MainActivity : FlutterActivity() {
                 try {
                     result.error("register_timeout",
                         "سرویس بلوتوث در زمان مقرر پاسخ نداد — بلوتوث را خاموش و روشن کنید", null)
-                } catch (_: Throwable) {}
+                } catch (ignored: Throwable) {}
             }
         }
         mainHandler.postDelayed(timeoutRunnable, 8_000)
