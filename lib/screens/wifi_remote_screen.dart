@@ -6,11 +6,13 @@ import '../theme/colors.dart';
 import '../widgets/touchpad.dart';
 
 /// ══════════════════════════════════════════════════════════════════════
-///  WifiRemoteScreen — کنترل وای‌فای، سبک EShare
+///  WifiRemoteScreen — کنترل وای‌فای، پروتکل EShare دقیق
 ///
-///  جریان کار:
-///    • قطع: دکمه «اتصال خودکار» — IP تلویزیون از جدول ARP/اسکن زیرشبکه شناسایی
-///    • وصل: تاچ‌پد بزرگ (مرکز) + دکمه‌های فشرده بالا/پایین مثل EShare
+///  روش اتصال صحیح:
+///    گوشی و تلویزیون باید روی یک شبکه WiFi باشند
+///    (یا تلویزیون به hotspot گوشی وصل باشد)
+///    → برنامه پورت ۲۰۱۲ (پورت EShare) را در شبکه پیدا می‌کند
+///    → اتصال TCP با پروتکل دقیق EShare
 /// ══════════════════════════════════════════════════════════════════════
 class WifiRemoteScreen extends StatefulWidget {
   const WifiRemoteScreen({super.key});
@@ -21,11 +23,12 @@ class WifiRemoteScreen extends StatefulWidget {
 class _WifiRemoteScreenState extends State<WifiRemoteScreen> {
   final _svc = WifiRemoteService.instance;
   final _ipCtrl = TextEditingController();
-  final _portCtrl = TextEditingController(text: '9000');
+  final _portCtrl = TextEditingController(
+      text: WifiRemoteService.defaultPort.toString());
 
   late StreamSubscription<WifiConnState> _sub;
   WifiConnState _state = WifiConnState.disconnected;
-  bool _showManual = false;      // آیا ورودی دستی IP نمایش داده شود
+  bool _showManual = false;
 
   @override
   void initState() {
@@ -33,10 +36,6 @@ class _WifiRemoteScreenState extends State<WifiRemoteScreen> {
     _state = _svc.state;
     _sub = _svc.stateStream.listen((s) {
       if (mounted) setState(() => _state = s);
-    });
-    // پیش‌پر کردن IP احتمالی
-    _svc.detectTvIp().then((ips) {
-      if (mounted && ips.isNotEmpty) _ipCtrl.text = ips.first;
     });
   }
 
@@ -48,19 +47,18 @@ class _WifiRemoteScreenState extends State<WifiRemoteScreen> {
     super.dispose();
   }
 
-  // ── اتصال خودکار ──────────────────────────────────────────────────────
   Future<void> _autoConnect() async {
     FocusScope.of(context).unfocus();
     await _svc.autoConnect();
     _showError();
   }
 
-  // ── اتصال دستی ────────────────────────────────────────────────────────
   Future<void> _manualConnect() async {
     FocusScope.of(context).unfocus();
     final ip = _ipCtrl.text.trim();
     if (ip.isEmpty) return;
-    final port = int.tryParse(_portCtrl.text.trim()) ?? 9000;
+    final port = int.tryParse(_portCtrl.text.trim()) ??
+        WifiRemoteService.defaultPort;
     await _svc.connect(ip, port: port);
     _showError();
   }
@@ -70,9 +68,10 @@ class _WifiRemoteScreenState extends State<WifiRemoteScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         backgroundColor: AppColors.danger.withOpacity(0.92),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         content: Text(_svc.lastError!,
-            style: const TextStyle(fontSize: 13)),
+            style: const TextStyle(fontSize: 13, height: 1.6)),
       ));
     }
   }
@@ -137,7 +136,7 @@ class _ConnectView extends StatelessWidget {
     final connecting = state == WifiConnState.connecting;
     return Column(
       children: [
-        // ── نوار بالا ─────────────────────────────────────────────────
+        // ── نوار بالا ──────────────────────────────────────────────────
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
@@ -192,15 +191,15 @@ class _ConnectView extends StatelessWidget {
                         color: AppColors.text1)),
                 const SizedBox(height: 10),
                 const Text(
-                  'hotspot گوشی را باز کنید، تلویزیون وصل شود،\n'
-                  'سپس دکمه اتصال خودکار را بزنید',
+                  'گوشی و تلویزیون را به یک شبکه WiFi وصل کنید\n'
+                  'سپس «اتصال خودکار» را بزنید',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 13, height: 1.9, color: AppColors.text2),
                 ),
                 const SizedBox(height: 36),
 
-                // ── دکمه اتصال خودکار ─────────────────────────────────
+                // ── دکمه اتصال خودکار ──────────────────────────────────
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
@@ -232,17 +231,18 @@ class _ConnectView extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
 
-                // ── تبدیل به دستی ─────────────────────────────────────
+                // ── ورودی دستی ────────────────────────────────────────
                 TextButton(
                   onPressed: onToggleManual,
                   child: Text(
-                    showManual ? 'پنهان کردن تنظیمات دستی' : 'تنظیم دستی IP و پورت',
+                    showManual
+                        ? 'پنهان کردن تنظیمات دستی'
+                        : 'وارد کردن IP تلویزیون به‌صورت دستی',
                     style: const TextStyle(
                         color: AppColors.text3, fontSize: 13),
                   ),
                 ),
 
-                // ── ورودی دستی ────────────────────────────────────────
                 AnimatedSize(
                   duration: const Duration(milliseconds: 260),
                   curve: Curves.easeOut,
@@ -250,17 +250,21 @@ class _ConnectView extends StatelessWidget {
                       ? Column(
                           children: [
                             const SizedBox(height: 4),
-                            _IpField(ctrl: ipCtrl, label: 'آدرس IP'),
+                            _IpField(
+                                ctrl: ipCtrl,
+                                label: 'آدرس IP تلویزیون (مثال: 192.168.1.10)',
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                             const SizedBox(height: 10),
                             _IpField(
                                 ctrl: portCtrl,
-                                label: 'پورت',
+                                label: 'پورت (پیش‌فرض: 2012)',
                                 keyboardType: TextInputType.number),
                             const SizedBox(height: 14),
                             SizedBox(
                               width: double.infinity,
                               child: OutlinedButton(
-                                onPressed: connecting ? null : onManualConnect,
+                                onPressed:
+                                    connecting ? null : onManualConnect,
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: AppColors.wifiAccent,
                                   side: const BorderSide(
@@ -284,7 +288,8 @@ class _ConnectView extends StatelessWidget {
                 ),
 
                 const SizedBox(height: 36),
-                // ── راهنما ────────────────────────────────────────────
+
+                // ── راهنمای اتصال ─────────────────────────────────────
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -307,17 +312,52 @@ class _ConnectView extends StatelessWidget {
                       ]),
                       SizedBox(height: 12),
                       _HintRow(
-                          n: '۱',
-                          text:
-                              'در گوشی، hotspot (نقطه اتصال) را روشن کنید'),
+                        n: '۱',
+                        text: 'تلویزیون و گوشی را به یک شبکه WiFi وصل کنید',
+                      ),
                       _HintRow(
-                          n: '۲',
-                          text:
-                              'در تلویزیون، به WiFi گوشی وصل شوید (نام hotspot را پیدا کنید)'),
+                        n: '۲',
+                        text:
+                            'یا: گوشی را hotspot کنید و تلویزیون را به آن وصل کنید',
+                      ),
                       _HintRow(
-                          n: '۳',
-                          text:
-                              'به این صفحه برگردید و «اتصال خودکار» را بزنید'),
+                        n: '۳',
+                        text:
+                            'دکمه «اتصال خودکار» را بزنید — برنامه تلویزیون را پیدا می‌کند',
+                      ),
+                      _HintRow(
+                        n: '۴',
+                        text:
+                            'اگر پیدا نشد: IP تلویزیون را از تنظیمات شبکه آن بگیرید و دستی وارد کنید',
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // ── نکته پروتکل ───────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.wifiAccent.withOpacity(0.07),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: AppColors.wifiAccent.withOpacity(0.2)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.settings_ethernet_rounded,
+                          color: AppColors.wifiAccent, size: 15),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'پروتکل EShare — پورت 2012 — سازگار با EShare Server',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.wifiAccent,
+                              height: 1.5),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -348,7 +388,7 @@ class _IpField extends StatelessWidget {
       style: const TextStyle(color: AppColors.text1, fontSize: 15),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: AppColors.text3),
+        labelStyle: const TextStyle(color: AppColors.text3, fontSize: 12),
         filled: true,
         fillColor: AppColors.panel,
         border: OutlineInputBorder(
@@ -372,6 +412,7 @@ class _HintRow extends StatelessWidget {
   const _HintRow({required this.n, required this.text});
   final String n;
   final String text;
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -395,9 +436,7 @@ class _HintRow extends StatelessWidget {
         Expanded(
             child: Text(text,
                 style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.text2,
-                    height: 1.7))),
+                    fontSize: 12, color: AppColors.text2, height: 1.7))),
       ]),
     );
   }
@@ -409,12 +448,13 @@ class _HintRow extends StatelessWidget {
 class _RemoteView extends StatefulWidget {
   const _RemoteView({super.key, required this.svc});
   final WifiRemoteService svc;
+
   @override
   State<_RemoteView> createState() => _RemoteViewState();
 }
 
 class _RemoteViewState extends State<_RemoteView> {
-  bool _showExtra = false; // پنل کنترل‌های بیشتر
+  bool _showExtra = false;
 
   Future<void> _k(String key) async {
     HapticFeedback.lightImpact();
@@ -425,18 +465,16 @@ class _RemoteViewState extends State<_RemoteView> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // ══ نوار بالا ══════════════════════════════════════════════════
+        // ══ نوار بالا ════════════════════════════════════════════════
         _TopBar(
           ip: widget.svc.connectedIp ?? '',
           port: widget.svc.connectedPort,
-          onDisconnect: () async {
-            await widget.svc.disconnect();
-          },
+          onDisconnect: () async => widget.svc.disconnect(),
           onToggleExtra: () => setState(() => _showExtra = !_showExtra),
           showExtra: _showExtra,
         ),
 
-        // ══ ردیف بالای تاچ‌پد: Back / Home / Menu ═════════════════════
+        // ══ ردیف بالای تاچ‌پد: Back / Home / Menu ════════════════════
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(
@@ -461,7 +499,7 @@ class _RemoteViewState extends State<_RemoteView> {
         ),
         const SizedBox(height: 10),
 
-        // ══ تاچ‌پد اصلی — بزرگ، مثل EShare ═══════════════════════════
+        // ══ تاچ‌پد اصلی ══════════════════════════════════════════════
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -471,13 +509,12 @@ class _RemoteViewState extends State<_RemoteView> {
               height: double.infinity,
               onMove: (dx, dy) => widget.svc.sendMouseMove(dx, dy),
               onTap: () => widget.svc.sendMouseClick(),
-              // آرامش اسکرول: Column ندارد ListView، پس قفل scroll لازم نیست
             ),
           ),
         ),
         const SizedBox(height: 10),
 
-        // ══ ردیف پایین: Vol- / Mute / Vol+ ════════════════════════════
+        // ══ ردیف پایین: Vol- / Mute / Vol+ ══════════════════════════
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(
@@ -501,7 +538,7 @@ class _RemoteViewState extends State<_RemoteView> {
         ),
         const SizedBox(height: 10),
 
-        // ══ پنل کنترل‌های بیشتر (قابل جمع) ═══════════════════════════
+        // ══ پنل کنترل‌های بیشتر ══════════════════════════════════════
         AnimatedSize(
           duration: const Duration(milliseconds: 280),
           curve: Curves.easeOut,
@@ -518,7 +555,7 @@ class _RemoteViewState extends State<_RemoteView> {
   }
 }
 
-// ── نوار بالای ریموت ──────────────────────────────────────────────────
+// ── نوار بالا ─────────────────────────────────────────────────────────
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.ip,
@@ -539,10 +576,8 @@ class _TopBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
         children: [
-          // وضعیت
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: AppColors.wifiAccent.withOpacity(0.12),
               borderRadius: BorderRadius.circular(999),
@@ -554,8 +589,7 @@ class _TopBar extends StatelessWidget {
                   width: 6,
                   height: 6,
                   decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.wifiAccent)),
+                      shape: BoxShape.circle, color: AppColors.wifiAccent)),
               const SizedBox(width: 6),
               Text('$ip${port != null ? ':$port' : ''}',
                   style: const TextStyle(
@@ -565,7 +599,6 @@ class _TopBar extends StatelessWidget {
             ]),
           ),
           const Spacer(),
-          // دکمه کنترل‌های بیشتر
           IconButton(
             onPressed: onToggleExtra,
             tooltip: 'دکمه‌های بیشتر',
@@ -581,7 +614,6 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          // قطع اتصال
           IconButton(
             onPressed: onDisconnect,
             tooltip: 'قطع اتصال',
@@ -598,7 +630,7 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-// ── پنل دکمه‌های بیشتر (Power، NavPad، CH، Source، Play) ──────────────
+// ── پنل دکمه‌های بیشتر ────────────────────────────────────────────────
 class _ExtraPanel extends StatelessWidget {
   const _ExtraPanel({required this.onKey});
   final Future<void> Function(String) onKey;
@@ -614,22 +646,19 @@ class _ExtraPanel extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Power + Source + Play
           Row(children: [
             _XBtn(Icons.power_settings_new_rounded, 'پاور',
                 () => onKey('power'), AppColors.danger),
             const SizedBox(width: 8),
-            _XBtn(Icons.input_rounded, 'ورودی', () => onKey('source'),
-                AppColors.wifiAccent),
+            _XBtn(Icons.input_rounded, 'ورودی',
+                () => onKey('source'), AppColors.wifiAccent),
             const SizedBox(width: 8),
             _XBtn(Icons.play_circle_rounded, 'پخش',
                 () => onKey('play_pause'), AppColors.wifiAccent),
           ]),
           const SizedBox(height: 10),
-          // NavPad کوچک
           _MiniNavPad(onKey: onKey),
           const SizedBox(height: 10),
-          // CH
           Row(children: [
             _XBtn(Icons.keyboard_arrow_up_rounded, 'کانال +',
                 () => onKey('ch_up'), null),
@@ -663,13 +692,14 @@ class _MiniNavPad extends StatelessWidget {
         Column(mainAxisSize: MainAxisSize.min, children: [
           _NavDot(Icons.keyboard_arrow_up_rounded, () => onKey('up'), s),
           Row(mainAxisSize: MainAxisSize.min, children: [
-            _NavDot(Icons.keyboard_arrow_left_rounded, () => onKey('left'), s),
+            _NavDot(
+                Icons.keyboard_arrow_left_rounded, () => onKey('left'), s),
             const SizedBox(width: 3),
-            _NavDot(Icons.radio_button_checked_rounded, () => onKey('ok'), ok,
-                AppColors.wifiAccent),
+            _NavDot(Icons.radio_button_checked_rounded, () => onKey('ok'),
+                ok, AppColors.wifiAccent),
             const SizedBox(width: 3),
-            _NavDot(Icons.keyboard_arrow_right_rounded,
-                () => onKey('right'), s),
+            _NavDot(
+                Icons.keyboard_arrow_right_rounded, () => onKey('right'), s),
           ]),
           _NavDot(Icons.keyboard_arrow_down_rounded, () => onKey('down'), s),
         ]),
@@ -684,6 +714,7 @@ class _NavDot extends StatelessWidget {
   final VoidCallback onTap;
   final double size;
   final Color? accent;
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -705,8 +736,8 @@ class _NavDot extends StatelessWidget {
                   ? accent!.withOpacity(0.45)
                   : AppColors.line),
         ),
-        child: Icon(icon, size: size * 0.42,
-            color: accent ?? AppColors.text1),
+        child:
+            Icon(icon, size: size * 0.42, color: accent ?? AppColors.text1),
       ),
     );
   }
@@ -718,6 +749,7 @@ class _XBtn extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final Color? accent;
+
   @override
   Widget build(BuildContext context) {
     final c = accent ?? AppColors.text2;
@@ -737,29 +769,30 @@ class _XBtn extends StatelessWidget {
                     ? accent!.withOpacity(0.35)
                     : AppColors.line),
           ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, color: c, size: 20),
-            const SizedBox(height: 4),
-            Text(label,
-                style: TextStyle(
-                    fontSize: 9,
-                    color: c.withOpacity(0.9),
-                    fontWeight: FontWeight.w600)),
-          ]),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: c, size: 20),
+              const SizedBox(height: 4),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: c,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// ── دکمه pill پایین/بالا تاچ‌پد ──────────────────────────────────────
 class _PillBtn extends StatelessWidget {
-  const _PillBtn({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.accent,
-  });
+  const _PillBtn(
+      {required this.icon,
+      required this.label,
+      required this.onTap,
+      this.accent});
   final IconData icon;
   final String label;
   final VoidCallback onTap;
@@ -775,25 +808,27 @@ class _PillBtn extends StatelessWidget {
           onTap();
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 13),
+          padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             color: accent != null ? accent!.withOpacity(0.1) : AppColors.panel,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: accent != null
-                  ? accent!.withOpacity(0.4)
-                  : AppColors.line,
-            ),
+                color:
+                    accent != null ? accent!.withOpacity(0.4) : AppColors.line,
+                width: accent != null ? 1.5 : 1.0),
           ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, color: c, size: 22),
-            const SizedBox(height: 5),
-            Text(label,
-                style: TextStyle(
-                    fontSize: 10,
-                    color: c.withOpacity(0.85),
-                    fontWeight: FontWeight.w600)),
-          ]),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: c, size: 22),
+              const SizedBox(height: 4),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: c,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
         ),
       ),
     );

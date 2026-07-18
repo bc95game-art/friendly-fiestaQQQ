@@ -1,40 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  به‌روزرسانی بلوتوث: چون اپ دیگر با GATT/BLE اسکن نمی‌کند (آن روش با UUID
-  ساختگی کار می‌کرد و هیچ‌وقت واقعاً وصل نمی‌شد)، فقط BLUETOOTH_CONNECT لازم
-  است تا لیست دستگاه‌های Pair‌شده خوانده شود و به آن‌ها با پروفایل استاندارد
-  BluetoothHidDevice متصل شویم. مجوزهای BLUETOOTH_SCAN/ADMIN/LOCATION و
-  RECORD_AUDIO (که برای قابلیت میکروفونِ هیچ‌وقت‌کارنکرده لازم بود) حذف شدند.
--->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="ali.khaleghi.daewooremote">
 
-    <!-- بلوتوث: اندروید ۱۲ (API 31) به بعد -->
+    <!-- ── بلوتوث ── -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <!-- برای «قابل مشاهده کردن» گوشی (تا از روی خودِ تلویزیون بتوان به آن
-         وصل شد) — روش جایگزینِ اتصال وقتی اتصال از سمت گوشی ناپایدار است. -->
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
 
-    <!-- فرستنده مادون‌قرمز (فقط روی گوشی‌هایی که سخت‌افزار IR دارند فعال می‌شود) -->
+    <!-- ── شبکه WiFi — برای کنترل از طریق وای‌فای (پروتکل EShare) ── -->
+    <!-- INTERNET: برای سوکت TCP به تلویزیون (پورت 2012) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- ACCESS_WIFI_STATE: خواندن IP شبکه برای پیدا کردن تلویزیون -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- ACCESS_NETWORK_STATE: بررسی اتصال شبکه -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- ── فرستنده مادون‌قرمز ── -->
     <uses-permission android:name="android.permission.TRANSMIT_IR" />
     <uses-feature android:name="android.hardware.consumerir" android:required="false" />
 
+    <!-- ── لرزش (فیدبک لمسی) ── -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- این مجوز فقط برای ابزار توسعه فلاتر لازم است (hot reload / flutter run
-         از طریق سوکت لوکال با دستگاه صحبت می‌کند و اندروید حتی برای سوکت لوکال
-         هم مجوز INTERNET می‌خواهد). در build نهایی release هیچ درخواست شبکه‌ای
-         توسط خودِ اپ انجام نمی‌شود (بدون تبلیغات/سرور) — اگر می‌خواهید کاملاً
-         بدون دسترسی شبکه باشد، این خط را فقط در نسخه release حذف کنید. -->
-    <uses-permission android:name="android.permission.INTERNET" />
-
-    <!-- نیازی به بلوتوث سخت‌افزاری اجباری نیست چون حالت IR بدون بلوتوث هم کار می‌کند -->
+    <!-- سخت‌افزار اختیاری — اپ با یا بدون اینها کار می‌کند -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
-
-    <!-- برای اینکه گوشی به‌عنوان یک کیبورد/کنترل بلوتوثی به تلویزیون معرفی
-         شود (پروفایل BluetoothHidDevice)، حداقل حداقل سخت‌افزار bluetooth لازم است -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <application
@@ -42,7 +32,12 @@
         android:label="کنترل هوشمند دوو"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="true">
+        <!--
+          usesCleartextTraffic="true" برای اتصال TCP خام به تلویزیون در شبکه محلی
+          لازم است. EShare هم از TCP ساده (بدون TLS) استفاده می‌کند چون شبکه
+          داخلی خانه است و رمزنگاری لازم نیست.
+        -->
 
         <activity
             android:name=".MainActivity"
