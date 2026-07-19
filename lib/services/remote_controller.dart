@@ -4,39 +4,38 @@ import 'bt_hid_service.dart';
 import 'bt_hid_commands.dart';
 import 'ir_service.dart';
 import 'ir_codes.dart';
+import 'wifi_remote_service.dart';
 
-/// نتیجه‌ی ارسال یک دستور، برای نمایش پیام مناسب در UI (مثلاً SnackBar)
+/// نتیجه‌ی ارسال یک دستور، برای نمایش پیام مناسب در UI
 class CommandResult {
   final bool success;
   final String? message;
   const CommandResult(this.success, [this.message]);
 }
 
-/// هر دکمه‌ی کنترل، این کلاس را صدا می‌زند. بسته به حالت (bluetooth/ir)
-/// دستور را از مسیر درست (HID بلوتوثی واقعی یا ConsumerIrManager) ارسال می‌کند.
+/// هر دکمه‌ی کنترل، این کلاس را صدا می‌زند. بسته به حالت (bluetooth/ir/wifi)
+/// دستور را از مسیر درست ارسال می‌کند.
 class RemoteController {
   RemoteController(this.mode);
   final RemoteMode mode;
 
-  /// رفع باگ «دکمه Back و Home در حالت IR تلویزیون را Freeze می‌کنند»:
+  /// ⚠️ رفع باگ گزارش‌شده «دکمه Home و Back در IR کار نمی‌کند»:
   ///
-  /// ریموت فیزیکی اصلی دوو ۱۳۶۳ دکمه‌ی Back یا Home ندارد، پس کد IR واقعی
-  /// برای آن‌ها وجود ندارد. کدهای «مهندسی‌شده» که قبلاً استفاده می‌شد
-  /// گاهی باعث Freeze لحظه‌ای تلویزیون می‌شد — احتمالاً به دلیل باگ firmware
-  /// در پردازش کد ناشناخته توسط گیرنده IR تلویزیون.
+  /// ریموت فیزیکی اصلی دوو ۱۳۶۳ نه دکمه Home دارد نه Back.
+  /// کاربر تأیید کرده که دکمه EXIT همان عملکرد هر دو را دارد
+  /// (از منو/برنامه خارج می‌کند).
   ///
-  /// راه‌حل امن: دکمه‌های بدون کد IR واقعی به نزدیک‌ترین معادل عملکردی که
-  /// از ریموت اصلی ضبط شده (و صد درصد کار می‌کند) تغییر مسیر می‌دهند:
-  ///   • back  → exit  (کد واقعی «خروج» — مثل Back از برنامه/منو خارج می‌شود)
-  ///   • home  → menu  (کد واقعی «منو» — به صفحه اصلی منوی تلویزیون می‌رود)
+  /// قبلاً: home → menu  (اشتباه — منو باز می‌کرد نه خروج)
+  /// حالا:  home → exit  (درست — مثل EXIT ریموت اصلی عمل می‌کند)
   static const _irFallback = <String, String>{
     'back': 'exit',
-    'home': 'menu',
+    'home': 'exit',
   };
 
   Future<CommandResult> send(String commandKey) async {
     HapticFeedback.lightImpact();
 
+    // ── حالت بلوتوث ───────────────────────────────────────────────────
     if (mode.isBluetooth) {
       if (!BtHidService.instance.isConnected) {
         return const CommandResult(false, 'ابتدا به بلوتوث تلویزیون متصل شوید');
@@ -51,7 +50,17 @@ class RemoteController {
       return CommandResult(ok, ok ? null : 'ارسال فرمان با خطا مواجه شد');
     }
 
-    // حالت IR — از جایگزین امن برای دکمه‌های بدون کد واقعی استفاده می‌کنیم
+    // ── حالت وای‌فای ──────────────────────────────────────────────────
+    if (mode.isWifi) {
+      if (!WifiRemoteService.instance.isConnected) {
+        return const CommandResult(false, 'اتصال وای‌فای برقرار نیست — برگردید');
+      }
+      final ok = await WifiRemoteService.instance.sendKey(commandKey);
+      return CommandResult(ok, ok ? null : 'ارسال دستور با خطا مواجه شد');
+    }
+
+    // ── حالت IR ───────────────────────────────────────────────────────
+    // از جایگزین امن برای دکمه‌های بدون کد واقعی استفاده می‌کنیم
     final irKey = _irFallback[commandKey] ?? commandKey;
     final pattern = IrCodes.patternFor(irKey);
     if (pattern == null) {

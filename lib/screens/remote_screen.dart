@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/remote_mode.dart';
 import '../services/bt_hid_service.dart';
+import '../services/wifi_remote_service.dart';
 import '../services/permissions_service.dart';
 import '../services/remote_controller.dart';
 import '../theme/colors.dart';
@@ -25,6 +26,10 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
   // همان لحظه می‌خوانیم تا نمایش با واقعیت هم‌خوان باشد.
   BtConnState _btState = BtHidService.instance.state;
   StreamSubscription<BtConnState>? _btSub;
+
+  // ── وای‌فای: وضعیت اتصال جداگانه (مستقل از بلوتوث) ─────────────────────
+  WifiConnState _wifiState = WifiRemoteService.instance.state;
+  StreamSubscription<WifiConnState>? _wifiSub;
 
   // ── تلاش خودکار مجدد وقتی اتصال بدون اقدام کاربر قطع می‌شود ──────────
   // رفع باگ «قطع تصادفی/نیاز به ری‌استارت اپ»: به‌جای منتظر ماندن برای
@@ -98,6 +103,14 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
         }
       });
       _initBluetooth();
+    }
+    // ── وای‌فای: ثبت listener برای نمایش وضعیت اتصال ─────────────────────
+    if (widget.mode.isWifi) {
+      _wifiState = WifiRemoteService.instance.state;
+      _wifiSub = WifiRemoteService.instance.stateStream.listen((s) {
+        if (!mounted) return;
+        setState(() => _wifiState = s);
+      });
     }
   }
 
@@ -295,6 +308,7 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
     }
     _retryTimer?.cancel();
     _btSub?.cancel();
+    _wifiSub?.cancel();
     super.dispose();
   }
 
@@ -401,6 +415,15 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
 
   String get _statusText {
     if (widget.mode.isIr) return 'آماده ارسال سیگنال';
+    // ── وای‌فای — وضعیت مستقل از بلوتوث ──────────────────────────────────
+    if (widget.mode.isWifi) {
+      return switch (_wifiState) {
+        WifiConnState.connected    => 'متصل به وای‌فای تلویزیون',
+        WifiConnState.connecting   => 'در حال اتصال وای‌فای…',
+        WifiConnState.error        => 'خطا در اتصال وای‌فای',
+        WifiConnState.disconnected => 'اتصال وای‌فای قطع شد — برگردید',
+      };
+    }
     switch (_btState) {
       case BtConnState.connected:
         return 'متصل به بلوتوث تلویزیون';
@@ -417,8 +440,15 @@ class _RemoteScreenState extends State<RemoteScreen> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
-    final accent = widget.mode.isBluetooth ? AppColors.btAccent : AppColors.irAccent;
-    final connected = widget.mode.isIr || _btState == BtConnState.connected;
+    final accent = switch (widget.mode) {
+      RemoteMode.bluetooth => AppColors.btAccent,
+      RemoteMode.wifi      => AppColors.wifiAccent,
+      RemoteMode.ir        => AppColors.irAccent,
+    };
+    // ⚠️ رفع تداخل بخش‌ها: هر حالت فقط سرویس خودش را چک می‌کند
+    final connected = widget.mode.isIr ||
+        (widget.mode.isBluetooth && _btState == BtConnState.connected) ||
+        (widget.mode.isWifi && _wifiState == WifiConnState.connected);
 
     return Scaffold(
       appBar: AppBar(
@@ -863,36 +893,28 @@ class _SmallRemote extends StatefulWidget {
 }
 
 class _SmallRemoteState extends State<_SmallRemote> {
-  // ⚠️ بهبود EShare-style: تاچ‌پد از همان ابتدا فعال است — کاربر بلافاصله
-  // می‌تواند بکشد (حرکت نشانگر) یا ضربه بزند (کلیک)، بدون نیاز به فشار
-  // دکمه‌ی جداگانه. دکمه‌ی موس همچنان در UI هست و می‌توان تاچ‌پد را خاموش کرد.
-  bool _mouseActive = true;
+  // ⚠️ رفع باگ «تاچ‌پد از اول فعال است»: کاربر گزارش کرد که وقتی وارد کنترل
+  // کوچک می‌شود موس فعال است و اسکرول صفحه قفل می‌شود. حالا پیش‌فرض غیرفعال
+  // است — کاربر باید دکمه‌ی موس را بزند تا تاچ‌پد فعال شود.
+  bool _mouseActive = false;
 
-  /// ⚠️ رفع باگ «موقع حرکت‌دادن نشانگر با تاچ‌پد، کل صفحه‌ی کنترل هم
-  /// اسکرول می‌شود»: صفحه‌ی کنترل کوچک داخل یک ListView قابل‌اسکرول است
-  /// و تاچ‌پد هم در همان لیست قرار دارد؛ کشیدن عمودی انگشت هم‌زمان هم
-  /// به‌عنوان «اسکرول لیست» و هم «حرکت موس» تفسیر می‌شد. با این پرچم،
-  /// در طول کشیدن انگشت روی تاچ‌پد، اسکرول لیست بیرونی موقتاً غیرفعال
-  /// می‌شود تا فقط نشانگر تلویزیون حرکت کند.
-  bool _touchpadDragging = false;
-
-  /// ⚠️ رفع باگ «OK در حالت موس روی گزینه‌ی فوکوس D-pad کلیک می‌کند نه
-  /// روی جایی که موس است»:
+  /// ⚠️ رفع باگ تداخل بخش‌ها + OK در حالت موس:
   ///
-  /// وقتی موس فعال است، دکمه OK باید یک کلیک چپ موس واقعی ارسال کند —
-  /// نه کد HID Consumer «Menu Pick» (0x0041) که سیستم آن را به عنوان
-  /// فشار کلید DPAD_CENTER تفسیر می‌کند و روی گزینه‌ی فوکوس D-pad عمل
-  /// می‌کند. کلیک چپ موس مستقل از فوکوس D-pad است و دقیقاً روی موقعیت
-  /// نشانگر کلیک می‌کند — همان رفتاری که کاربر انتظار دارد.
+  /// مشکل ۱ (تداخل): قبلاً BtHidService.instance.isConnected بدون بررسی
+  /// mode فراخوانی می‌شد. اگر بلوتوث از بخش قبلی وصل بود و کاربر در IR
+  /// بود، OK اشتباهاً کلیک BT می‌فرستاد نه کد IR. ← رفع شد با بررسی mode.
   ///
-  /// سایر دکمه‌های NavPad (بالا/پایین/چپ/راست) همچنان به همان شکل
-  /// کار می‌کنند — می‌توان از آن‌ها برای ناوبری معمولی در کنار موس استفاده
-  /// کرد.
+  /// مشکل ۲: وقتی موس فعال است، OK باید کلیک چپ موس واقعی بفرستد.
   void _smartPress(String key) {
-    if (key == 'ok' && _mouseActive && BtHidService.instance.isConnected) {
-      // به‌جای Menu Pick، کلیک چپ موس واقعی ارسال کن
-      BtHidService.instance.sendMouseClick();
-      return;
+    if (key == 'ok' && _mouseActive) {
+      if (widget.mode.isBluetooth && BtHidService.instance.isConnected) {
+        BtHidService.instance.sendMouseClick();
+        return;
+      }
+      if (widget.mode.isWifi && WifiRemoteService.instance.isConnected) {
+        WifiRemoteService.instance.sendMouseClick();
+        return;
+      }
     }
     widget.onPress(key);
   }
@@ -904,10 +926,10 @@ class _SmallRemoteState extends State<_SmallRemote> {
     final onPress = widget.onPress;
     final locked = !mode.supportsTouchpad;
     return ListView(
-      // ⚠️ رفع باگ «اسکرول همیشه قفل بود»: قبلاً شرط شامل _mouseActive بود،
-      // ولی چون حالا _mouseActive=true پیش‌فرض است، لیست هیچ‌وقت اسکرول
-      // نمی‌شد. حالا فقط در طول کشیدن روی تاچ‌پد قفل می‌شود — نه بیشتر.
-      physics: _touchpadDragging
+      // ⚠️ رفع باگ «اسکرول صفحه هنگام کشیدن موس»:
+      // وقتی موس فعال است، ListView کاملاً قفل می‌شود تا gesture روی تاچ‌پد
+      // فقط موس را حرکت دهد. وقتی موس غیرفعال است، اسکرول طبیعی کار می‌کند.
+      physics: _mouseActive
           ? const NeverScrollableScrollPhysics()
           : const AlwaysScrollableScrollPhysics(),
       children: [
@@ -1010,11 +1032,18 @@ class _SmallRemoteState extends State<_SmallRemote> {
                     : accent.withOpacity(0.15),
                 onTap: () {
                   setState(() => _mouseActive = !_mouseActive);
-                  // ⚠️ رفع باگ «دکمه موس کار نمی‌کند»: وقتی بلوتوث وصل
-                  // نیست، کاربر موس را فعال می‌کرد ولی هیچ اتفاقی نمی‌افتاد
-                  // و فکر می‌کرد دکمه خراب است. حالا پیام واضح داده می‌شود.
-                  if (!BtHidService.instance.isConnected && !locked) {
-                    widget.onError('ابتدا به بلوتوث تلویزیون متصل شوید تا موس کار کند');
+                  // ⚠️ رفع تداخل: بررسی اتصال متناسب با mode
+                  if (!locked && _mouseActive) {
+                    final svcConnected = widget.mode.isBluetooth
+                        ? BtHidService.instance.isConnected
+                        : widget.mode.isWifi
+                            ? WifiRemoteService.instance.isConnected
+                            : false;
+                    if (!svcConnected) {
+                      widget.onError(widget.mode.isBluetooth
+                          ? 'ابتدا به بلوتوث تلویزیون متصل شوید تا موس کار کند'
+                          : 'ابتدا به وای‌فای تلویزیون متصل شوید تا موس کار کند');
+                    }
                   }
                 },
                 child: const Icon(Icons.mouse_rounded),
@@ -1060,27 +1089,32 @@ class _SmallRemoteState extends State<_SmallRemote> {
         ),
         const SizedBox(height: 16),
 
-        // ── تاچ‌پد موس (فقط بلوتوث) — سبک EShare ─────────────────────────
-        // • کشیدن = حرکت نشانگر (sensitivity بالاتر، مثل EShare)
-        // • ضربه‌ی ساده = کلیک چپ موس
-        // • تاچ‌پد از همان ابتدا فعال است (_mouseActive = true)
+        // ── تاچ‌پد موس (بلوتوث + وای‌فای) — سبک EShare ─────────────────────
+        // • کشیدن = حرکت نشانگر  • ضربه‌ی ساده = کلیک
+        // ⚠️ رفع تداخل: callback براساس mode از سرویس درست استفاده می‌کند
         Touchpad(
           active: _mouseActive && !locked,
           accentColor: widget.accent,
           height: 170,
-          hint: 'ابتدا به بلوتوث تلویزیون متصل شوید تا تاچ‌پد کار کند',
+          hint: locked
+              ? 'تاچ‌پد در حالت فرستنده پشتیبانی نمی‌شود'
+              : 'دکمه‌ی موس بالا را بزنید تا تاچ‌پد فعال شود',
           onMove: (dx, dy) async {
-            if (BtHidService.instance.isConnected) {
+            if (widget.mode.isBluetooth && BtHidService.instance.isConnected) {
               await BtHidService.instance.sendMouseMove(dx, dy);
+            } else if (widget.mode.isWifi &&
+                WifiRemoteService.instance.isConnected) {
+              await WifiRemoteService.instance.sendMouseMove(dx, dy);
             }
           },
           onTap: () async {
-            if (BtHidService.instance.isConnected) {
+            if (widget.mode.isBluetooth && BtHidService.instance.isConnected) {
               await BtHidService.instance.sendMouseClick();
+            } else if (widget.mode.isWifi &&
+                WifiRemoteService.instance.isConnected) {
+              await WifiRemoteService.instance.sendMouseClick();
             }
           },
-          onDragStart: () => setState(() => _touchpadDragging = true),
-          onDragEnd: () => setState(() => _touchpadDragging = false),
         ),
         const SizedBox(height: 16),
       ],

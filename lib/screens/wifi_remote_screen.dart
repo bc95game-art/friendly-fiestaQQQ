@@ -1,18 +1,22 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../models/remote_mode.dart';
 import '../services/wifi_remote_service.dart';
 import '../theme/colors.dart';
-import '../widgets/touchpad.dart';
+import 'size_picker_screen.dart';
 
 /// ══════════════════════════════════════════════════════════════════════
 ///  WifiRemoteScreen — کنترل وای‌فای، پروتکل EShare دقیق
 ///
-///  روش اتصال صحیح:
-///    گوشی و تلویزیون باید روی یک شبکه WiFi باشند
-///    (یا تلویزیون به hotspot گوشی وصل باشد)
-///    → برنامه پورت ۲۰۱۲ (پورت EShare) را در شبکه پیدا می‌کند
-///    → اتصال TCP با پروتکل دقیق EShare
+///  روش اتصال صحیح (مثل EShare):
+///    ۱. hotspot گوشی را روشن کنید
+///    ۲. تلویزیون را به hotspot گوشی وصل کنید
+///    ۳. دکمه «اتصال خودکار» را بزنید
+///
+///  پس از اتصال موفق، کاربر به صفحه‌ی انتخاب نوع کنترل (بزرگ/کوچک)
+///  هدایت می‌شود — دقیقاً مثل بخش‌های بلوتوث و فرستنده.
+///
+///  پروتکل: TCP پورت 2012 — همان پروتکل دقیق EShare Server
 /// ══════════════════════════════════════════════════════════════════════
 class WifiRemoteScreen extends StatefulWidget {
   const WifiRemoteScreen({super.key});
@@ -30,13 +34,41 @@ class _WifiRemoteScreenState extends State<WifiRemoteScreen> {
   WifiConnState _state = WifiConnState.disconnected;
   bool _showManual = false;
 
+  /// جلوگیری از navigate مجدد وقتی کاربر Back می‌زند و برمی‌گردد.
+  /// وقتی قطع می‌شود، reset می‌شود تا اتصال بعدی دوباره navigate کند.
+  bool _navigatedToRemote = false;
+
   @override
   void initState() {
     super.initState();
     _state = _svc.state;
+    // اگر از قبل وصل بود (کاربر Back زد و برگشت)، پرچم بزن تا دوباره
+    // navigate نشود — کاربر خودش باید دکمه «انتخاب نوع کنترل» را بزند.
+    if (_state == WifiConnState.connected) _navigatedToRemote = true;
+
     _sub = _svc.stateStream.listen((s) {
-      if (mounted) setState(() => _state = s);
+      if (!mounted) return;
+      setState(() => _state = s);
+      if (s == WifiConnState.connected && !_navigatedToRemote) {
+        // اتصال جدید برقرار شد — به انتخاب کنترل برو
+        _navigatedToRemote = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _pushSizePicker());
+      }
+      if (s == WifiConnState.disconnected || s == WifiConnState.error) {
+        // اتصال قطع شد — پرچم reset می‌شود تا اتصال بعدی navigate کند
+        _navigatedToRemote = false;
+      }
     });
+  }
+
+  /// navigate به SizePickerScreen با mode=wifi
+  void _pushSizePicker() {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const SizePickerScreen(mode: RemoteMode.wifi),
+      ),
+    );
   }
 
   @override
@@ -86,8 +118,19 @@ class _WifiRemoteScreenState extends State<WifiRemoteScreen> {
           duration: const Duration(milliseconds: 320),
           transitionBuilder: (child, anim) =>
               FadeTransition(opacity: anim, child: child),
+          // وقتی متصل است و کاربر برگشته، _ConnectedView نشان داده می‌شود
+          // وقتی متصل است و هنوز navigate نشده، لحظه‌ای _ConnectedView نشان
+          // داده می‌شود قبل از اینکه navigate اتفاق بیفتد (postFrameCallback)
           child: connected
-              ? _RemoteView(key: const ValueKey('remote'), svc: _svc)
+              ? _ConnectedView(
+                  key: const ValueKey('connected'),
+                  ip: _svc.connectedIp ?? '',
+                  onEnter: _pushSizePicker,
+                  onDisconnect: () async {
+                    await _svc.disconnect();
+                    setState(() => _navigatedToRemote = false);
+                  },
+                )
               : _ConnectView(
                   key: const ValueKey('connect'),
                   state: _state,
@@ -101,6 +144,126 @@ class _WifiRemoteScreenState extends State<WifiRemoteScreen> {
                   onBack: () => Navigator.of(context).pop(),
                 ),
         ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  صفحه «متصل است» — وقتی کاربر از SizePicker برمی‌گردد
+// ═══════════════════════════════════════════════════════════════════════
+class _ConnectedView extends StatelessWidget {
+  const _ConnectedView({
+    super.key,
+    required this.ip,
+    required this.onEnter,
+    required this.onDisconnect,
+  });
+  final String ip;
+  final VoidCallback onEnter;
+  final VoidCallback onDisconnect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // ── آیکون متصل ───────────────────────────────────────────────
+          Container(
+            width: 88,
+            height: 88,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                  color: AppColors.wifiAccent.withOpacity(0.45), width: 1.5),
+              color: AppColors.wifiAccentDim,
+            ),
+            child: const Icon(Icons.wifi_rounded,
+                color: AppColors.wifiAccent, size: 42),
+          ),
+          const SizedBox(height: 20),
+
+          const Text('متصل به تلویزیون',
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.text1)),
+          const SizedBox(height: 8),
+
+          // ── نشانگر IP ──────────────────────────────────────────────
+          if (ip.isNotEmpty)
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.wifiAccent.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(999),
+                border:
+                    Border.all(color: AppColors.wifiAccent.withOpacity(0.35)),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                        shape: BoxShape.circle, color: AppColors.wifiAccent)),
+                const SizedBox(width: 6),
+                Text(ip,
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.wifiAccent,
+                        fontWeight: FontWeight.w600)),
+              ]),
+            ),
+
+          const SizedBox(height: 40),
+
+          // ── دکمه «انتخاب نوع کنترل» ───────────────────────────────
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: onEnter,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.wifiAccent,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 17),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+                textStyle: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.play_arrow_rounded, size: 22),
+                  SizedBox(width: 10),
+                  Text('انتخاب نوع کنترل'),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // ── دکمه قطع اتصال ────────────────────────────────────────
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: onDisconnect,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.danger,
+                side: const BorderSide(color: AppColors.danger),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+              ),
+              child: const Text('قطع اتصال',
+                  style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -439,399 +602,6 @@ class _HintRow extends StatelessWidget {
                 style: const TextStyle(
                     fontSize: 12, color: AppColors.text2, height: 1.7))),
       ]),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-//  صفحه ریموت (وقتی وصل است) — سبک EShare
-// ═══════════════════════════════════════════════════════════════════════
-class _RemoteView extends StatefulWidget {
-  const _RemoteView({super.key, required this.svc});
-  final WifiRemoteService svc;
-
-  @override
-  State<_RemoteView> createState() => _RemoteViewState();
-}
-
-class _RemoteViewState extends State<_RemoteView> {
-  bool _showExtra = false;
-
-  Future<void> _k(String key) async {
-    HapticFeedback.lightImpact();
-    await widget.svc.sendKey(key);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // ══ نوار بالا ════════════════════════════════════════════════
-        _TopBar(
-          ip: widget.svc.connectedIp ?? '',
-          port: widget.svc.connectedPort,
-          onDisconnect: () async => widget.svc.disconnect(),
-          onToggleExtra: () => setState(() => _showExtra = !_showExtra),
-          showExtra: _showExtra,
-        ),
-
-        // ══ ردیف بالای تاچ‌پد: Back / Home / Menu ════════════════════
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(
-            children: [
-              _PillBtn(
-                  icon: Icons.arrow_back_rounded,
-                  label: 'بازگشت',
-                  onTap: () => _k('back')),
-              const SizedBox(width: 8),
-              _PillBtn(
-                  icon: Icons.home_rounded,
-                  label: 'خانه',
-                  onTap: () => _k('home'),
-                  accent: AppColors.wifiAccent),
-              const SizedBox(width: 8),
-              _PillBtn(
-                  icon: Icons.menu_rounded,
-                  label: 'منو',
-                  onTap: () => _k('menu')),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-
-        // ══ تاچ‌پد اصلی ══════════════════════════════════════════════
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Touchpad(
-              active: true,
-              accentColor: AppColors.wifiAccent,
-              height: double.infinity,
-              onMove: (dx, dy) => widget.svc.sendMouseMove(dx, dy),
-              onTap: () => widget.svc.sendMouseClick(),
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-
-        // ══ ردیف پایین: Vol- / Mute / Vol+ ══════════════════════════
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(
-            children: [
-              _PillBtn(
-                  icon: Icons.volume_down_rounded,
-                  label: 'صدا —',
-                  onTap: () => _k('vol_down')),
-              const SizedBox(width: 8),
-              _PillBtn(
-                  icon: Icons.volume_mute_rounded,
-                  label: 'بی‌صدا',
-                  onTap: () => _k('mute')),
-              const SizedBox(width: 8),
-              _PillBtn(
-                  icon: Icons.volume_up_rounded,
-                  label: 'صدا +',
-                  onTap: () => _k('vol_up')),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-
-        // ══ پنل کنترل‌های بیشتر ══════════════════════════════════════
-        AnimatedSize(
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOut,
-          child: _showExtra
-              ? Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-                  child: _ExtraPanel(onKey: _k),
-                )
-              : const SizedBox.shrink(),
-        ),
-        const SizedBox(height: 12),
-      ],
-    );
-  }
-}
-
-// ── نوار بالا ─────────────────────────────────────────────────────────
-class _TopBar extends StatelessWidget {
-  const _TopBar({
-    required this.ip,
-    required this.port,
-    required this.onDisconnect,
-    required this.onToggleExtra,
-    required this.showExtra,
-  });
-  final String ip;
-  final int? port;
-  final VoidCallback onDisconnect;
-  final VoidCallback onToggleExtra;
-  final bool showExtra;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.wifiAccent.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                  color: AppColors.wifiAccent.withOpacity(0.4)),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Container(
-                  width: 6,
-                  height: 6,
-                  decoration: const BoxDecoration(
-                      shape: BoxShape.circle, color: AppColors.wifiAccent)),
-              const SizedBox(width: 6),
-              Text('$ip${port != null ? ':$port' : ''}',
-                  style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.wifiAccent,
-                      fontWeight: FontWeight.w600)),
-            ]),
-          ),
-          const Spacer(),
-          IconButton(
-            onPressed: onToggleExtra,
-            tooltip: 'دکمه‌های بیشتر',
-            icon: AnimatedRotation(
-              turns: showExtra ? 0.5 : 0,
-              duration: const Duration(milliseconds: 250),
-              child: const Icon(Icons.keyboard_arrow_up_rounded,
-                  color: AppColors.text2),
-            ),
-            style: IconButton.styleFrom(
-              backgroundColor: AppColors.panel,
-              padding: const EdgeInsets.all(9),
-            ),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: onDisconnect,
-            tooltip: 'قطع اتصال',
-            icon: const Icon(Icons.wifi_off_rounded,
-                color: AppColors.danger, size: 20),
-            style: IconButton.styleFrom(
-              backgroundColor: AppColors.danger.withOpacity(0.1),
-              padding: const EdgeInsets.all(9),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── پنل دکمه‌های بیشتر ────────────────────────────────────────────────
-class _ExtraPanel extends StatelessWidget {
-  const _ExtraPanel({required this.onKey});
-  final Future<void> Function(String) onKey;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Column(
-        children: [
-          Row(children: [
-            _XBtn(Icons.power_settings_new_rounded, 'پاور',
-                () => onKey('power'), AppColors.danger),
-            const SizedBox(width: 8),
-            _XBtn(Icons.input_rounded, 'ورودی',
-                () => onKey('source'), AppColors.wifiAccent),
-            const SizedBox(width: 8),
-            _XBtn(Icons.play_circle_rounded, 'پخش',
-                () => onKey('play_pause'), AppColors.wifiAccent),
-          ]),
-          const SizedBox(height: 10),
-          _MiniNavPad(onKey: onKey),
-          const SizedBox(height: 10),
-          Row(children: [
-            _XBtn(Icons.keyboard_arrow_up_rounded, 'کانال +',
-                () => onKey('ch_up'), null),
-            const SizedBox(width: 8),
-            _XBtn(Icons.keyboard_arrow_down_rounded, 'کانال —',
-                () => onKey('ch_down'), null),
-            const SizedBox(width: 8),
-            _XBtn(Icons.fast_rewind_rounded, 'عقب',
-                () => onKey('rewind'), null),
-            const SizedBox(width: 8),
-            _XBtn(Icons.fast_forward_rounded, 'جلو',
-                () => onKey('forward'), null),
-          ]),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniNavPad extends StatelessWidget {
-  const _MiniNavPad({required this.onKey});
-  final Future<void> Function(String) onKey;
-
-  @override
-  Widget build(BuildContext context) {
-    const s = 44.0;
-    const ok = 50.0;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Column(mainAxisSize: MainAxisSize.min, children: [
-          _NavDot(Icons.keyboard_arrow_up_rounded, () => onKey('up'), s),
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            _NavDot(
-                Icons.keyboard_arrow_left_rounded, () => onKey('left'), s),
-            const SizedBox(width: 3),
-            _NavDot(Icons.radio_button_checked_rounded, () => onKey('ok'),
-                ok, AppColors.wifiAccent),
-            const SizedBox(width: 3),
-            _NavDot(
-                Icons.keyboard_arrow_right_rounded, () => onKey('right'), s),
-          ]),
-          _NavDot(Icons.keyboard_arrow_down_rounded, () => onKey('down'), s),
-        ]),
-      ],
-    );
-  }
-}
-
-class _NavDot extends StatelessWidget {
-  const _NavDot(this.icon, this.onTap, this.size, [this.accent]);
-  final IconData icon;
-  final VoidCallback onTap;
-  final double size;
-  final Color? accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        onTap();
-      },
-      child: Container(
-        width: size,
-        height: size,
-        margin: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: accent != null
-              ? accent!.withOpacity(0.15)
-              : AppColors.panel2,
-          border: Border.all(
-              color: accent != null
-                  ? accent!.withOpacity(0.45)
-                  : AppColors.line),
-        ),
-        child:
-            Icon(icon, size: size * 0.42, color: accent ?? AppColors.text1),
-      ),
-    );
-  }
-}
-
-class _XBtn extends StatelessWidget {
-  const _XBtn(this.icon, this.label, this.onTap, this.accent);
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final Color? accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = accent ?? AppColors.text2;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          onTap();
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 11),
-          decoration: BoxDecoration(
-            color: accent != null ? accent!.withOpacity(0.1) : AppColors.bg2,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-                color: accent != null
-                    ? accent!.withOpacity(0.35)
-                    : AppColors.line),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: c, size: 20),
-              const SizedBox(height: 4),
-              Text(label,
-                  style: TextStyle(
-                      fontSize: 10,
-                      color: c,
-                      fontWeight: FontWeight.w600)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PillBtn extends StatelessWidget {
-  const _PillBtn(
-      {required this.icon,
-      required this.label,
-      required this.onTap,
-      this.accent});
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final Color? accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = accent ?? AppColors.text2;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          onTap();
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: accent != null ? accent!.withOpacity(0.1) : AppColors.panel,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-                color:
-                    accent != null ? accent!.withOpacity(0.4) : AppColors.line,
-                width: accent != null ? 1.5 : 1.0),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: c, size: 22),
-              const SizedBox(height: 4),
-              Text(label,
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: c,
-                      fontWeight: FontWeight.w600)),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

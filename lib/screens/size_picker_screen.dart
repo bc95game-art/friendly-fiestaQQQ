@@ -41,6 +41,17 @@ class SizePickerScreen extends StatelessWidget {
   }
 
   Future<void> _open(BuildContext context, RemoteSize size) async {
+    // ── وای‌فای: اتصال قبلاً برقرار شده، مستقیم به کنترل می‌رویم ────────
+    if (mode.isWifi) {
+      if (context.mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+              builder: (_) => RemoteScreen(mode: mode, size: size)),
+        );
+      }
+      return;
+    }
+
     if (mode.isIr) {
       // ── بررسی وجود سخت‌افزار IR ─────────────────────────────────────────
       final hasIr = await IrService.instance.hasIrEmitter();
@@ -120,7 +131,12 @@ class SizePickerScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final accent = mode.isBluetooth ? AppColors.btAccent : AppColors.irAccent;
     return Scaffold(
-      appBar: AppBar(title: Text(mode.isBluetooth ? 'انتخاب کنترل — روش بلوتوثی' : 'انتخاب کنترل — روش فرستنده')),
+      appBar: AppBar(
+          title: Text(mode.isBluetooth
+              ? 'انتخاب کنترل — روش بلوتوثی'
+              : mode.isWifi
+                  ? 'انتخاب کنترل — روش وای‌فای'
+                  : 'انتخاب کنترل — روش فرستنده')),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
